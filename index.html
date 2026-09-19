@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<script>/* arcAId theme: light by default, remembered per browser */try{var _t=localStorage.getItem("gmh:theme2");document.documentElement.setAttribute("data-arcade-theme",_t==="dark"?"dark":"light");}catch(e){document.documentElement.setAttribute("data-arcade-theme","light");}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>סל הרחוב · arcAId</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;900&family=Secular+One&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --wall:#171226; --wall-2:#241a3a;
+    --ink:#fdf7ff; --muted:#b9a8d6;
+    --pink:#ff2e93; --cyan:#22e0ff; --lime:#b6ff2e; --yellow:#ffd23f; --purple:#9b5cff;
+    --ball:#ff7a1f; --ball-2:#ffb15c;
+  }
+  *{ box-sizing:border-box; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    font-family:'Rubik','Segoe UI',Tahoma,sans-serif;
+    background:
+      radial-gradient(110% 50% at 15% -5%, rgba(255,46,147,0.16), transparent 60%),
+      radial-gradient(110% 50% at 85% -5%, rgba(34,224,255,0.14), transparent 60%),
+      linear-gradient(180deg, var(--wall) 0%, var(--wall-2) 100%);
+    color:var(--ink);
+    display:flex; align-items:center; justify-content:center;
+    min-height:100vh;
+    /* the shared arcAId bar is fixed to the bottom — keep the stack clear of it at every height */
+    padding:12px env(safe-area-inset-right) calc(60px + env(safe-area-inset-bottom,0px)) env(safe-area-inset-left);
+    overflow:hidden;
+  }
+  .stage{ width:100%; max-width:430px; display:flex; flex-direction:column; gap:8px; }
+
+  .scoreboard{
+    display:flex; justify-content:space-between; align-items:stretch;
+    background:linear-gradient(180deg,#2b1f47,#1b1430);
+    border:2px solid rgba(255,255,255,0.14); border-radius:14px; padding:8px 14px;
+    box-shadow:0 10px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07);
+  }
+  .cell{ display:flex; flex-direction:column; align-items:center; gap:1px; min-width:62px; position:relative; }
+  .cell-label{ font-size:10.5px; color:var(--muted); font-weight:500; letter-spacing:.04em; }
+  .cell-value{ font-family:'Secular One',Rubik,sans-serif; font-size:24px; color:var(--yellow);
+               text-shadow:2px 2px 0 rgba(255,46,147,0.75); font-variant-numeric:tabular-nums; }
+  #timer.low-time{ color:#ff5c7a; text-shadow:2px 2px 0 rgba(0,0,0,.5); animation:tPulse .6s ease-in-out infinite; }
+  @keyframes tPulse{ 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.13);} }
+  #timer.time-gain{ color:var(--lime); }
+  .gain-pop{ position:absolute; left:50%; top:-6px; transform:translateX(-50%); font-size:14px; font-weight:900;
+             color:var(--lime); white-space:nowrap; pointer-events:none; animation:gainPop 1.1s ease-out forwards; }
+  @keyframes gainPop{ 0%{ opacity:0; transform:translate(-50%,8px);} 20%{ opacity:1;} 100%{ opacity:0; transform:translate(-50%,-24px);} }
+
+  .streak-banner{ text-align:center; font-family:'Secular One',Rubik,sans-serif; font-size:14px;
+                  color:var(--lime); min-height:18px; text-shadow:1.5px 1.5px 0 rgba(0,0,0,.55);
+                  opacity:0; transform:translateY(-4px); transition:opacity .25s ease, transform .25s ease; }
+  .streak-banner.show{ opacity:1; transform:translateY(0); }
+
+  #court{
+    position:relative; width:100%; aspect-ratio:1/1.33; border-radius:16px; overflow:hidden;
+    border:3px solid rgba(255,255,255,0.9);
+    box-shadow:0 16px 38px rgba(0,0,0,0.6), inset 0 0 40px rgba(0,0,0,0.45);
+    touch-action:none; background:#120d1f;
+  }
+  #court canvas{ display:block; width:100%; height:100%; touch-action:none; }
+
+  #message{ position:absolute; top:60%; left:0; right:0; text-align:center;
+            font-family:'Secular One',Rubik,sans-serif; font-size:21px;
+            text-shadow:3px 3px 0 rgba(0,0,0,0.8); z-index:20; opacity:0; padding:0 6%;
+            transition:opacity .2s ease, transform .2s ease; transform:translateY(6px) scale(.95); }
+  #message.show{ opacity:1; transform:translateY(0) scale(1); }
+
+  .power-wrap{ display:none; flex-direction:column; gap:3px; }
+  .power-wrap.active{ display:flex; }
+  .power-bar{ height:12px; border-radius:7px; background:rgba(255,255,255,0.09);
+              border:2px solid rgba(255,255,255,0.18); overflow:hidden; }
+  .power-fill{ height:100%; width:0%; background:linear-gradient(90deg,var(--cyan),var(--lime),var(--yellow),var(--pink)); transition:width .04s linear; }
+  .power-caption{ display:flex; justify-content:space-between; font-size:11.5px; color:var(--muted); }
+
+  .veil{ position:absolute; inset:0; z-index:30; display:flex; align-items:center; justify-content:center;
+         background:rgba(12,8,22,0.62); backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); }
+  .veil.hidden{ display:none; }
+  .veil span{ font-family:'Secular One',Rubik,sans-serif; font-size:22px; color:var(--yellow); text-shadow:2px 2px 0 var(--pink); }
+  .countdown-num{ font-family:'Secular One',Rubik,sans-serif; font-size:66px; color:var(--yellow);
+                  text-shadow:4px 4px 0 var(--pink), 0 0 26px rgba(255,210,63,.5); animation:countPop .7s ease-out; }
+  @keyframes countPop{ 0%{ transform:scale(.4) rotate(-8deg); opacity:.3;} 40%{ transform:scale(1.15) rotate(3deg); opacity:1;} 100%{ transform:scale(1) rotate(0); opacity:1;} }
+  .countdown-num.hidden{ display:none; }
+  .start-btn{
+    font-family:'Secular One',Rubik,sans-serif;
+    background:linear-gradient(180deg,var(--yellow),var(--ball)); color:#2a0a2a; border:3px solid #2a0a2a;
+    padding:13px 28px; border-radius:12px; font-size:17px; cursor:pointer;
+    box-shadow:5px 5px 0 var(--pink); animation:sPulse 1.6s ease-in-out infinite;
+  }
+  .start-btn:active{ transform:translate(2px,2px); box-shadow:3px 3px 0 var(--pink); }
+  @keyframes sPulse{ 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.04);} }
+
+  .hint{ text-align:center; font-size:12.5px; color:var(--muted); background:rgba(255,255,255,0.05);
+         border:1px solid rgba(255,255,255,0.09); border-radius:11px; padding:7px 12px; line-height:1.5; }
+
+  .modal-veil{ position:fixed; inset:0; background:rgba(10,6,18,0.78); backdrop-filter:blur(3px);
+               display:flex; align-items:center; justify-content:center; z-index:50; opacity:0;
+               pointer-events:none; transition:opacity .25s ease; }
+  .modal-veil.show{ opacity:1; pointer-events:auto; }
+  .modal-card{ background:linear-gradient(180deg,#2b1f47,#1b1430); border:3px solid var(--pink);
+               border-radius:16px; padding:22px; width:88%; max-width:330px; text-align:center;
+               box-shadow:8px 8px 0 rgba(34,224,255,0.5); transform:translateY(10px) scale(.97); transition:transform .25s ease; }
+  .modal-veil.show .modal-card{ transform:translateY(0) scale(1); }
+  .modal-title{ font-family:'Secular One',Rubik,sans-serif; font-size:22px; color:var(--yellow);
+                text-shadow:2px 2px 0 var(--pink); margin-bottom:14px; }
+  .modal-stats{ display:flex; justify-content:space-around; margin-bottom:16px; }
+  .modal-stat b{ display:block; font-family:'Secular One',Rubik,sans-serif; font-size:24px; color:var(--ink); }
+  .modal-stat span{ font-size:12px; color:var(--muted); }
+  .modal-btn{ font-family:'Secular One',Rubik,sans-serif;
+              background:linear-gradient(180deg,var(--yellow),var(--ball)); color:#2a0a2a; border:3px solid #2a0a2a;
+              padding:10px 24px; border-radius:11px; font-size:15px; cursor:pointer; box-shadow:4px 4px 0 var(--cyan); }
+  .modal-btn:active{ transform:translate(2px,2px); box-shadow:2px 2px 0 var(--cyan); }
+  .hidden{ display:none !important; }
+
+  /* short screens — mostly phones held sideways: size the court by height so it clears the control bar */
+  @media (max-height:640px){
+    .hint{ display:none; }
+    .streak-banner{ min-height:0; font-size:12px; }
+    .cell-value{ font-size:19px; }
+    .scoreboard{ padding:4px 12px; }
+    #court{ height:calc(100dvh - 186px); width:auto; aspect-ratio:1/1.33; align-self:center; max-width:100%; }
+  }
+  @media (max-height:430px){
+    #court{ height:calc(100dvh - 158px); }
+    .cell-label{ display:none; }
+  }
+  /* phone in landscape: stand the panel beside the court instead of above it, so the court can
+     use the whole height rather than a 174px sliver */
+  @media (orientation:landscape) and (max-height:560px){
+    body{ padding:8px 12px calc(58px + env(safe-area-inset-bottom,0px)); }
+    .stage{
+      display:grid; width:auto; max-width:none; gap:8px 16px;
+      grid-template-columns:minmax(150px,230px) auto;
+      grid-template-rows:1fr auto auto auto 1fr;
+      grid-template-areas:". court" "score court" "banner court" "power court" ". court";
+      align-items:center; justify-content:center;
+    }
+    .scoreboard{ grid-area:score; padding:6px 12px; }
+    .cell-label{ display:block; }
+    .cell-value{ font-size:21px; }
+    .streak-banner{ grid-area:banner; }
+    .power-wrap{ grid-area:power; }
+    #court{ grid-area:court; height:calc(100dvh - 76px); width:auto; aspect-ratio:1/1.33; max-width:100%; }
+    .hint{ display:none; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .countdown-num, .start-btn{ animation:none; }
+  }
+
+/* ===== arcaide-theme: light chrome around the court ===== */
+html[data-arcade-theme="light"]{ --ink:#241636; --muted:#6b5a86; }
+html[data-arcade-theme="light"] body{ background:#f2ecfb; color:#241636; }
+html[data-arcade-theme="light"] .scoreboard{ background:linear-gradient(180deg,#ffffff,#f4eefc);
+  border-color:rgba(40,20,70,.16); box-shadow:0 8px 20px rgba(40,20,70,.14) }
+html[data-arcade-theme="light"] .cell-value{ color:#b3186a; text-shadow:2px 2px 0 rgba(255,210,63,.9) }
+html[data-arcade-theme="light"] .streak-banner{ color:#2f8f00; text-shadow:none }
+html[data-arcade-theme="light"] .hint{ background:rgba(40,20,70,.05); border-color:rgba(40,20,70,.1) }
+html[data-arcade-theme="light"] .power-bar{ background:rgba(40,20,70,.08); border-color:rgba(40,20,70,.18) }
+html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#ffffff,#f4eefc) }
+</style>
+<!-- arcaide-leaderboard -->
+<script src="https://gilmagnum.github.io/games/config.js?v=4"></script>
+<script src="https://gilmagnum.github.io/games/leaderboard.js?v=4"></script>
+<!-- arcaide-pwa: installable to the home screen -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<meta name="theme-color" content="#171226">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="סל הרחוב">
+</head>
+<body>
+
+  <div class="stage">
+    <div class="scoreboard">
+      <div class="cell"><div class="cell-label">ניקוד</div><div class="cell-value" id="score">0</div></div>
+      <div class="cell"><div class="cell-label">זמן</div><div class="cell-value" id="timer">45</div></div>
+      <div class="cell"><div class="cell-label">שיא</div><div class="cell-value" id="highscore">0</div></div>
+    </div>
+
+    <div class="streak-banner" id="streakBanner"></div>
+
+    <div id="court">
+      <canvas id="cv" width="480" height="638"></canvas>
+      <div id="message">גררו מהכדור לכיוון הסל</div>
+      <div class="veil hidden" id="pauseVeil"><span>⏸ מושהה</span></div>
+      <div class="veil" id="startVeil">
+        <button class="start-btn" id="startBtn">▶ התחל משחק</button>
+        <div class="countdown-num hidden" id="countdownNum">3</div>
+      </div>
+    </div>
+
+    <div class="power-wrap" id="powerWrap">
+      <div class="power-bar"><div class="power-fill" id="powerFill"></div></div>
+      <div class="power-caption"><span>עוצמת זריקה</span><span id="powerText">0%</span></div>
+    </div>
+
+    <div class="hint">🏀 מושכים מהכדור לכיוון הסל — הקו המקווקו מראה בדיוק לאן הכדור יגיע. אחרי כל זריקה עוברים לנקודה אחרת. שלושה ברצף = מצב אש לשלוש זריקות 🔥, ושעון בתוך הרשת = עוד 10 שניות, ובניסיון השני 5 ⏱️</div>
+  </div>
+
+  <div class="modal-veil" id="overModal">
+    <div class="modal-card">
+      <div class="modal-title">נגמר הזמן</div>
+      <div class="modal-stats">
+        <div class="modal-stat"><b id="finalScore">0</b><span>ניקוד</span></div>
+        <div class="modal-stat"><b id="finalStreak">0</b><span>רצף שיא</span></div>
+      </div>
+      <button class="modal-btn" id="playAgainBtn">עוד סיבוב</button>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- board ----------
+  const W = 480, H = 638;
+  const ROUND_SECONDS = 45;
+  const RIM_Y     = 264;           // height of the rim plane
+  const RIM_HALF  = 40;            // half the rim opening
+  const RIM_NUB   = 6;             // the iron the ball can rattle off
+  const BOARD_W   = 124, BOARD_H = 78, BOARD_GAP = 26;   // gap between the board's bottom and the rim
+  const FLOOR_Y   = 512;
+  const BALL_R    = 17;
+  // the shooter moves between chalk spots on the floor, so every shot is a fresh angle —
+  // a fixed spot under a centred rim would make the throw purely vertical and the aim pointless
+  const SPOTS     = [0.15, 0.28, 0.40, 0.60, 0.72, 0.85].map(f => Math.round(W*f));
+  const HOME      = { x: SPOTS[2], y: FLOOR_Y + 22 };
+  const GRAV      = 2000;
+  // the drag sets the direction; its length sets the speed inside a usable band, the way the
+  // penalty game maps power — a basketball shot needs most of its energy upwards, so a raw
+  // pixels-to-speed mapping would leave the bottom of the power bar unusable.
+  // V_MIN is just enough to lift the ball to the rim plane when it is thrown straight up.
+  const V_MIN     = 1060, V_MAX = 1320;
+  // the drag is pulled FORWARD, toward where the ball should go: the finger travels half the
+  // way and the shot lands at twice that — the same idiom as the penalty kick.
+  const AIM_GAIN  = 2.0;
+  const ARC_OVER  = 86;            // how far the arc's apex clears the target
+  const AIM_Y_MIN = RIM_Y - 110;   // aiming higher than this changes nothing
+  const DRAG_FULL = 175;           // only the power read-out uses this
+  const HOOP_MIN_X= 92, HOOP_MAX_X = W - 92;
+  const STATIC_MAKES = 3;
+  const HOOP_V0   = 52, HOOP_STEP = 7, HOOP_MAX = 130;
+  const FIRE_AT      = 3;
+  const FIRE_SHOTS   = 3;          // fire mode lasts a number of shots, not a stretch of seconds
+  // the clock bonus hangs in the net: you win it by sinking the shot, so it never costs a turn
+  // the clock is worth less on the second try, so the first look at it is the one to take
+  const TIME_EVERY = 5, TIME_BONUS_1 = 10, TIME_BONUS_2 = 5, TIME_AWARDS_MAX = 3, TOKEN_SHOTS = 2;
+  const SHOT_TIMEOUT = 3.0;
+  const FIXED_STEP   = 1/300;      // physics runs on its own clock, so 60Hz and 120Hz fly the same arc
+
+  let storedHigh = 0, storedBest = 0;
+  try {
+    storedHigh = parseInt(localStorage.getItem('hoops_highscore') || '0', 10) || 0;
+    storedBest = parseInt(localStorage.getItem('hoops_beststreak') || '0', 10) || 0;
+  } catch(e){}
+
+  const S = {
+    score:0, timeLeft:ROUND_SECONDS, streak:0, bestStreak:storedBest, high:storedHigh,
+    makes:0, paused:false, over:false, started:false, locked:true, timeUp:false, muted:false,
+    hoopX:W/2, hoopDir:1, hopIn:0, acc:0, tAnim:0,
+    ball:null, dragging:false, dragTo:null,
+    fireShots:0, fireFresh:false, timeAwards:0, tokenPop:null,
+    netRipple:0, rimFlash:0, boardFlash:0, token:null, timerHandle:null, trail:[]
+  };
+
+  const cv = document.getElementById('cv');
+  const g  = cv.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const timerEl = document.getElementById('timer');
+  const highEl  = document.getElementById('highscore');
+  const banner  = document.getElementById('streakBanner');
+  const message = document.getElementById('message');
+  const powerWrap = document.getElementById('powerWrap');
+  const powerFill = document.getElementById('powerFill');
+  const powerText = document.getElementById('powerText');
+  const pauseVeil = document.getElementById('pauseVeil');
+  const startVeil = document.getElementById('startVeil');
+  const startBtn  = document.getElementById('startBtn');
+  const countNum  = document.getElementById('countdownNum');
+  const overModal = document.getElementById('overModal');
+  const finalScoreEl  = document.getElementById('finalScore');
+  const finalStreakEl = document.getElementById('finalStreak');
+  const playAgainBtn  = document.getElementById('playAgainBtn');
+
+  highEl.textContent = S.high;
+
+  // ---------- audio ----------
+  let actx = null;
+  function ctx(){ if (!actx){ try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return actx; }
+  function tone(f,dur,type,vol,delay){
+    if (S.muted) return;
+    const c = ctx(); if (!c) return;
+    const t0 = c.currentTime + (delay||0);
+    const o = c.createOscillator(), gn = c.createGain();
+    o.type = type||'sine'; o.frequency.setValueAtTime(f,t0);
+    gn.gain.setValueAtTime(vol||0.2,t0);
+    gn.gain.exponentialRampToValueAtTime(0.001,t0+dur);
+    o.connect(gn); gn.connect(c.destination); o.start(t0); o.stop(t0+dur+0.02);
+  }
+  function noise(dur,vol,freq,type){
+    if (S.muted) return;
+    const c = ctx(); if (!c) return;
+    const n = Math.floor(c.sampleRate*dur);
+    const buf = c.createBuffer(1,n,c.sampleRate), d = buf.getChannelData(0);
+    for (let i=0;i<n;i++) d[i] = (Math.random()*2-1)*(1-i/n);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const flt = c.createBiquadFilter(); flt.type = type||'bandpass'; flt.frequency.value = freq||1200;
+    const gn = c.createGain(); gn.gain.value = vol||0.3;
+    src.connect(flt); flt.connect(gn); gn.connect(c.destination); src.start();
+  }
+  const sfx = {
+    release(){ noise(0.05,0.18,700,'bandpass'); tone(260,0.06,'sine',0.14); },
+    swish(){ noise(0.25,0.26,3400,'highpass'); tone(940,0.1,'triangle',0.16,0.03); },
+    make(){ tone(523,0.1,'triangle',0.2); tone(784,0.15,'triangle',0.2,0.08); noise(0.2,0.16,2400,'highpass'); },
+    iron(){ tone(1260,0.05,'square',0.22); tone(680,0.12,'triangle',0.16,0.03); },
+    glass(){ noise(0.09,0.2,2000,'bandpass'); tone(420,0.08,'sine',0.14); },
+    brick(){ tone(190,0.16,'sawtooth',0.15); tone(140,0.2,'sawtooth',0.13,0.1); },
+    fire(){ [660,880,1180,1480].forEach((f,i)=>tone(f,0.12,'triangle',0.2,i*0.06)); },
+    clock(){ tone(1046,0.09,'sine',0.2); tone(1318,0.12,'sine',0.2,0.07); },
+    timeWin(){ [784,1046,1318,1568,2093].forEach((f,i)=>tone(f,0.16,'triangle',0.2,i*0.055));
+               noise(0.3,0.14,3000,'highpass'); },
+    tick(){ tone(920,0.05,'square',0.14); },
+    buzzer(){ tone(170,0.55,'square',0.22); noise(0.55,0.2,600,'lowpass'); }
+  };
+  function vibrate(p){ if (navigator.vibrate) try{ navigator.vibrate(p); }catch(e){} }
+
+  // ---------- helpers ----------
+  const inFire = () => S.fireShots > 0;
+  const tokenBonus = () => (S.token && S.token.shots >= TOKEN_SHOTS) ? TIME_BONUS_1 : TIME_BONUS_2;
+  const SWISH_CALLS = ['סוויש! 🎯', 'רק רשת! 🥅', 'נטו! ✨'];
+  const NEAR_CALLS  = ['כמעט! 😤', 'קרוב מאוד', 'על השפה 😬', 'כמעט נכנס'];
+  const pick = a => a[Math.floor(Math.random()*a.length)];
+  const hoopSpeed = () => S.makes < STATIC_MAKES ? 0 : Math.min(HOOP_MAX, HOOP_V0 + (S.makes-STATIC_MAKES)*HOOP_STEP);
+  const boardTop = () => RIM_Y - BOARD_GAP - BOARD_H;
+  const boardBottom = () => RIM_Y - BOARD_GAP;
+
+  // move the shooter to another chalk spot — never the same one twice in a row, and never
+  // one that sits straight under the rim, so the throw always needs a real angle
+  let spotIdx = 2;
+  function nextSpot(){
+    const pool = [];
+    for (let i=0;i<SPOTS.length;i++){
+      if (i === spotIdx) continue;
+      if (Math.abs(SPOTS[i] - S.hoopX) < RIM_HALF + 22) continue;
+      pool.push(i);
+    }
+    if (!pool.length) return;
+    spotIdx = pool[Math.floor(Math.random()*pool.length)];
+    HOME.x = SPOTS[spotIdx];
+    S.hopIn = 1;
+  }
+
+  function renderTimer(){
+    const t = Math.max(0, Math.ceil(S.timeLeft));
+    timerEl.textContent = t;
+    timerEl.classList.toggle('low-time', t <= 5 && t > 0);
+  }
+  function flashTime(sec){
+    const cell = timerEl.parentElement;
+    if (cell){
+      const pop = document.createElement('div');
+      pop.className = 'gain-pop'; pop.textContent = 'עוד ' + sec + ' שניות';
+      cell.appendChild(pop); setTimeout(()=>pop.remove(),1200);
+    }
+    timerEl.classList.add('time-gain');
+    setTimeout(()=>timerEl.classList.remove('time-gain'),1000);
+  }
+  function showMessage(text,color){
+    message.textContent = text;
+    message.style.color = color || 'var(--ink)';
+    message.classList.add('show');
+  }
+  function updateBanner(){
+    if (inFire()){ banner.textContent = '🔥 מצב אש — כל סל כפול · עוד ' + S.fireShots + (S.fireShots === 1 ? ' זריקה' : ' זריקות'); banner.classList.add('show'); }
+    else if (S.streak >= 2){ banner.textContent = 'רצף ' + S.streak; banner.classList.add('show'); }
+    else { banner.classList.remove('show'); banner.textContent = ''; }
+  }
+
+  // ---------- round flow ----------
+  function startTimer(){
+    if (S.started || S.over) return;
+    S.started = true;
+    S.timerHandle = setInterval(() => {
+      if (S.paused) return;
+      S.timeLeft -= 1;
+      if (S.timeLeft <= 5 && S.timeLeft > 0) sfx.tick();
+      if (S.timeLeft <= 0){ S.timeLeft = 0; clearInterval(S.timerHandle); S.timeUp = true; }
+      renderTimer();
+      if (S.timeUp && !S.ball && !S.over) endRound();
+    }, 1000);
+  }
+
+  function runCountdown(){
+    if (window.Leaderboard && Leaderboard.cancelPending) Leaderboard.cancelPending();
+    let n = 3;
+    countNum.textContent = n; sfx.tick();
+    const step = () => {
+      if (S.paused){ setTimeout(step,200); return; }
+      n -= 1;
+      if (n > 0){
+        countNum.textContent = n;
+        countNum.style.animation='none'; void countNum.offsetWidth; countNum.style.animation='';
+        sfx.tick(); setTimeout(step,700);
+      } else {
+        startVeil.classList.add('hidden');
+        S.locked = false;
+        showMessage('קדימה! 🏀','var(--yellow)');
+        setTimeout(()=>message.classList.remove('show'),900);
+        startTimer();
+      }
+    };
+    setTimeout(step,700);
+  }
+
+  function restart(){
+    setPaused(false);
+    if (window.Arcade) Arcade.setPaused(false);
+    if (S.timerHandle) clearInterval(S.timerHandle);
+    Object.assign(S,{
+      score:0, timeLeft:ROUND_SECONDS, streak:0, makes:0,
+      over:false, started:false, locked:true, timeUp:false,
+      hoopX:W/2, hoopDir:1, hopIn:0, acc:0, ball:null, dragging:false, dragTo:null,
+      fireShots:0, fireFresh:false, timeAwards:0, tokenPop:null,
+      netRipple:0, rimFlash:0, boardFlash:0, token:null, trail:[]
+    });
+    spotIdx = 2; HOME.x = SPOTS[2]; nextSpot();
+    scoreEl.textContent = 0; renderTimer(); updateBanner();
+    powerWrap.classList.remove('active');
+    message.classList.remove('show');
+    overModal.classList.remove('show');
+    startVeil.classList.remove('hidden');
+    countNum.classList.remove('hidden');
+    startBtn.style.display = 'none';
+    runCountdown();
+  }
+
+  function endRound(){
+    S.over = true;
+    if (S.timerHandle) clearInterval(S.timerHandle);
+    S.token = null; S.ball = null;
+    finalScoreEl.textContent = S.score;
+    finalStreakEl.textContent = S.bestStreak;
+    overModal.classList.add('show');
+    sfx.buzzer(); vibrate([20,40,20,40,60]);
+    if (window.Leaderboard){
+      (Leaderboard.gameOverIn
+        ? Leaderboard.gameOverIn(1200, S.score, { streak:S.bestStreak })
+        : setTimeout(function(){ Leaderboard.gameOver(S.score, { streak:S.bestStreak }); }, 1200));
+    }
+  }
+
+  // ---------- shooting ----------
+  // where the finger is pointing: the drag, doubled, clamped to the court
+  function aimTarget(to){
+    return {
+      x: Math.max(10, Math.min(W-10, HOME.x + (to.x - HOME.x)*AIM_GAIN)),
+      y: Math.max(AIM_Y_MIN, Math.min(HOME.y - 50, HOME.y + (to.y - HOME.y)*AIM_GAIN))
+    };
+  }
+  // the one arc that drops through that point: apex a fixed height above it, so the ball always
+  // comes down onto the rim rather than sliding in flat
+  function solveShot(tx, ty){
+    const apexY = Math.min(ty, RIM_Y) - ARC_OVER;
+    const u  = Math.sqrt(2*GRAV*(HOME.y - apexY));
+    const tt = u/GRAV + Math.sqrt(2*Math.max(0,(ty - apexY))/GRAV);
+    return { vx:(tx - HOME.x)/tt, vy:-u, t:tt };
+  }
+  function shotPower(sol){
+    return Math.round(Math.max(0, Math.min(1, (Math.hypot(sol.vx,sol.vy) - V_MIN)/(V_MAX - V_MIN)))*100);
+  }
+
+  function launchAt(tx, ty){
+    const sol = solveShot(tx, ty);
+    S.acc = 0;
+    S.ball = { x:HOME.x, y:HOME.y, vx:sol.vx, vy:sol.vy, t:0, spin:0, apexed:false,
+               touchedIron:false, touchedGlass:false, scored:false, done:false };
+    S.trail = [];
+    startTimer();
+    sfx.release(); vibrate(10);
+  }
+
+  function stepBall(dt){
+    const b = S.ball; if (!b) return;
+    S.acc += dt;
+    let guard = 0;
+    const h = FIXED_STEP;
+    while (S.acc >= h && !b.done && guard++ < 120){
+      S.acc -= h;
+      const prevY = b.y;
+      b.vy += GRAV*h;
+      b.x  += b.vx*h;
+      b.y  += b.vy*h;
+      b.spin += b.vx*h*0.012;
+      b.t  += h;
+      if (b.vy >= 0) b.apexed = true;
+
+      // side walls of the alley
+      if (b.x < BALL_R){ b.x = BALL_R; b.vx = Math.abs(b.vx)*0.55; }
+      if (b.x > W-BALL_R){ b.x = W-BALL_R; b.vx = -Math.abs(b.vx)*0.55; }
+
+      // the glass. on the way up the ball passes in front of the board, so it is only live for a
+      // falling ball: clip the square with a shot that is a touch wide and it is steered back onto
+      // the rim — the classic bank, worth two rather than a swish's three.
+      const bb = boardBottom();
+      if (b.apexed && b.vy > 0 && !b.touchedGlass && prevY <= bb && b.y > bb){
+        const off = Math.abs(b.x - S.hoopX);
+        if (off > RIM_HALF - 8 && off < BOARD_W/2 + 4){
+          b.touchedGlass = true; S.boardFlash = 1; sfx.glass();
+          const tt = Math.max(0.02, (RIM_Y - bb) / Math.max(120, b.vy));
+          const steer = (S.hoopX - b.x) / tt * 0.62;
+          b.vx = Math.max(-900, Math.min(900, steer));
+          b.vy *= 0.94;
+        }
+      }
+
+      // the two bits of iron at the ends of the rim
+      for (let k=0;k<2 && b.apexed;k++){
+        const side = k ? 1 : -1;
+        const rx = S.hoopX + side*RIM_HALF, ry = RIM_Y;
+        const ddx = b.x - rx, ddy = b.y - ry;
+        const d = Math.hypot(ddx, ddy);
+        if (d < BALL_R + RIM_NUB && d > 0.01){
+          const nx = ddx/d, ny = ddy/d;
+          const push = (BALL_R + RIM_NUB) - d;
+          b.x += nx*push; b.y += ny*push;
+          const dot = b.vx*nx + b.vy*ny;
+          b.vx = (b.vx - 2*dot*nx)*0.62;
+          b.vy = (b.vy - 2*dot*ny)*0.62;
+          if (!b.touchedIron){ b.touchedIron = true; S.rimFlash = 1; sfx.iron(); vibrate(8); }
+        }
+      }
+
+      // through the hoop, on the way down
+      if (!b.scored && b.vy > 0 && prevY - BALL_R <= RIM_Y && b.y - BALL_R > RIM_Y){
+        if (Math.abs(b.x - S.hoopX) < RIM_HALF - 5){
+          b.scored = true;
+          S.netRipple = 1;
+          if (S.token) collectToken();
+          scoreBasket(!b.touchedIron && !b.touchedGlass);
+        }
+      }
+
+      // once a miss is clearly past the rim there is nothing left to watch — keep the pace up
+      if (b.vy > 0 && b.y > RIM_Y + 170) b.done = true;
+      if (b.y > H + 60 || b.t > SHOT_TIMEOUT) b.done = true;
+    }
+
+    S.trail.push({ x:b.x, y:b.y });
+    if (S.trail.length > 14) S.trail.shift();
+
+    if (b.done){
+      if (!b.scored) missedShot(b);
+      // both the fire and the clock are measured in shots; the shot they appeared on does not count
+      if (S.fireShots > 0){
+        if (S.fireFresh) S.fireFresh = false;
+        else { S.fireShots -= 1; updateBanner(); }
+      }
+      if (S.token){
+        if (S.token.fresh) S.token.fresh = false;
+        else if (--S.token.shots <= 0) S.token = null;
+      }
+      S.ball = null;
+      nextSpot();
+      if (S.timeUp && !S.over) endRound();
+    }
+  }
+
+  function scoreBasket(swish){
+    S.makes++;
+    S.streak++;
+    if (S.streak > S.bestStreak) S.bestStreak = S.streak;
+    let pts = swish ? 3 : 2;
+    const fire = inFire();
+    if (fire) pts *= 2;
+    S.score += pts;
+    scoreEl.textContent = S.score;
+    if (S.streak % FIRE_AT === 0){
+      const again = inFire();
+      S.fireShots = FIRE_SHOTS; S.fireFresh = true;
+      sfx.fire(); vibrate([12,40,12,40]);
+      showMessage('🔥 ' + (again ? 'עוד ' : 'מצב אש — ') + FIRE_SHOTS + ' זריקות ניקוד כפול!', 'var(--lime)');
+    } else {
+      showMessage((swish ? pick(SWISH_CALLS) + ' ' : 'סל! 🏀 ') + pts + ' נק׳' + (fire ? ' כפול 🔥' : ''),
+                  swish ? 'var(--lime)' : 'var(--yellow)');
+      swish ? sfx.swish() : sfx.make();
+      vibrate(swish ? [10,30,10] : 14);
+    }
+    if (S.makes % TIME_EVERY === 0) spawnToken();
+    if (S.score > S.high){
+      S.high = S.score; highEl.textContent = S.high;
+      try{ localStorage.setItem('hoops_highscore', S.high); }catch(e){}
+    }
+    updateBanner();
+    setTimeout(()=>{ if (!S.over) message.classList.remove('show'); }, 850);
+  }
+
+  function missedShot(b){
+    S.streak = 0;
+    if (S.bestStreak > storedBest){
+      try{ localStorage.setItem('hoops_beststreak', S.bestStreak); }catch(e){}
+      storedBest = S.bestStreak;
+    }
+    if (b.touchedIron) showMessage(pick(NEAR_CALLS),'var(--muted)');
+    else if (b.touchedGlass) showMessage('לוח בלבד 😐','var(--muted)');
+    else { showMessage('אופס.. 😅','var(--muted)'); sfx.brick(); }
+    updateBanner();
+    setTimeout(()=>{ if (!S.over) message.classList.remove('show'); }, 800);
+  }
+
+  function spawnToken(){
+    if (S.timeAwards >= TIME_AWARDS_MAX) return;
+    S.token = { shots: TOKEN_SHOTS, fresh: true };
+    sfx.clock();
+  }
+  function collectToken(){
+    const bonus = tokenBonus();      // read it before the token is cleared
+    S.token = null;
+    S.timeAwards += 1;
+    S.timeLeft = Math.min(99, S.timeLeft + bonus);
+    renderTimer(); flashTime(bonus);
+    S.tokenPop = { t:0, bonus:bonus, x:S.hoopX, y:RIM_Y + 30 };
+    sfx.timeWin(); vibrate([14,40,14,40,24]);
+  }
+
+  // ---------- input: drag from the ball, the same idiom as the penalty game ----------
+  function courtPoint(e){
+    const r = cv.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * (W / r.width), y: (e.clientY - r.top) * (H / r.height) };
+  }
+  function onDown(e){
+    if (!actx) ctx();
+    if (S.locked || S.paused || S.over || S.timeUp || S.ball) return;
+    const p = courtPoint(e);
+    if (Math.hypot(p.x - HOME.x, p.y - HOME.y) > 84) return;
+    S.dragging = true;
+    S.dragTo = p;
+    powerWrap.classList.add('active');
+    message.classList.remove('show');
+  }
+  function onMove(e){
+    if (!S.dragging) return;
+    S.dragTo = courtPoint(e);
+    if (S.dragTo.y < HOME.y - 20){
+      const t = aimTarget(S.dragTo);
+      const pct = shotPower(solveShot(t.x, t.y));
+      powerFill.style.width = pct + '%'; powerText.textContent = pct + '%';
+    }
+  }
+  function onUp(){
+    if (!S.dragging) return;
+    S.dragging = false;
+    powerWrap.classList.remove('active');
+    const to = S.dragTo; S.dragTo = null;
+    powerFill.style.width = '0%'; powerText.textContent = '0%';
+    if (!to) return;
+    if (Math.hypot(to.x - HOME.x, to.y - HOME.y) < 18) return;   // a tap is not a shot
+    if (to.y > HOME.y - 20){                                      // it has to point up the court
+      showMessage('למשוך לכיוון הסל ☝️','var(--muted)');
+      setTimeout(()=>message.classList.remove('show'), 700);
+      return;
+    }
+    const t = aimTarget(to);
+    launchAt(t.x, t.y);
+  }
+  cv.addEventListener('pointerdown', onDown);
+  cv.addEventListener('pointermove', onMove);
+  cv.addEventListener('pointerup', onUp);
+  cv.addEventListener('pointercancel', onUp);
+
+  // ---------- loop ----------
+  let last = performance.now();
+  function frame(now){
+    const dt = Math.min(0.045, (now-last)/1000); last = now;
+    if (!S.paused && !S.over) update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  function update(dt){
+    S.tAnim += dt;
+    const hv = hoopSpeed();
+    if (hv > 0 && !S.locked){
+      S.hoopX += S.hoopDir*hv*dt;
+      if (S.hoopX < HOOP_MIN_X){ S.hoopX = HOOP_MIN_X; S.hoopDir = 1; }
+      if (S.hoopX > HOOP_MAX_X){ S.hoopX = HOOP_MAX_X; S.hoopDir = -1; }
+    }
+
+    if (S.ball) stepBall(dt);
+    if (S.tokenPop){ S.tokenPop.t += dt; if (S.tokenPop.t > 1.2) S.tokenPop = null; }
+    if (S.hopIn > 0)      S.hopIn      = Math.max(0, S.hopIn - dt*3.2);
+    if (S.netRipple > 0)  S.netRipple  = Math.max(0, S.netRipple - dt*2.6);
+    if (S.rimFlash > 0)   S.rimFlash   = Math.max(0, S.rimFlash - dt*3);
+    if (S.boardFlash > 0) S.boardFlash = Math.max(0, S.boardFlash - dt*3);
+  }
+
+  // ---------- graffiti wall (procedural, but identical on every load) ----------
+  let seed = 20260919;
+  function rnd(){ seed = (seed*1664525 + 1013904223) % 4294967296; return seed/4294967296; }
+  const TAG_COLORS = ['#ff2e93','#22e0ff','#b6ff2e','#ffd23f','#9b5cff','#ff7a1f'];
+  let wall = null;
+
+  function buildWall(){
+    const c = document.createElement('canvas');
+    c.width = W; c.height = FLOOR_Y;
+    const x = c.getContext('2d');
+    seed = 20260919;
+
+    const base = x.createLinearGradient(0,0,0,FLOOR_Y);
+    base.addColorStop(0,'#150f24'); base.addColorStop(0.6,'#1e1533'); base.addColorStop(1,'#2a1c42');
+    x.fillStyle = base; x.fillRect(0,0,W,FLOOR_Y);
+
+    // breeze-block courses
+    x.strokeStyle = 'rgba(255,255,255,0.045)'; x.lineWidth = 2;
+    for (let y=26;y<FLOOR_Y;y+=34){
+      x.beginPath(); x.moveTo(0,y); x.lineTo(W,y); x.stroke();
+      const off = (y/34)%2 ? 0 : 42;
+      for (let bx=off;bx<W;bx+=84){ x.beginPath(); x.moveTo(bx,y); x.lineTo(bx,y+34); x.stroke(); }
+    }
+
+    // spray clouds with drips — small and washed out, so the wall stays a backdrop
+    for (let i=0;i<15;i++){
+      const col = TAG_COLORS[Math.floor(rnd()*TAG_COLORS.length)];
+      const cx = 34 + rnd()*(W-68), cy = 34 + rnd()*(FLOOR_Y-80);
+      const rad = 15 + rnd()*30;
+      x.globalAlpha = 0.09 + rnd()*0.09;
+      x.fillStyle = col;
+      for (let k=0;k<5;k++){
+        x.beginPath();
+        x.arc(cx + (rnd()-0.5)*rad, cy + (rnd()-0.5)*rad*0.7, rad*(0.42+rnd()*0.42), 0, Math.PI*2);
+        x.fill();
+      }
+      x.globalAlpha = 0.16 + rnd()*0.12;
+      for (let d=0;d<2;d++){
+        const dx2 = cx + (rnd()-0.5)*rad, dy2 = cy + rad*0.4;
+        const len = 12 + rnd()*30, wdt = 3 + rnd()*3;
+        x.beginPath();
+        if (x.roundRect) x.roundRect(dx2, dy2, wdt, len, wdt/2); else x.rect(dx2, dy2, wdt, len);
+        x.fill();
+        x.beginPath(); x.arc(dx2+wdt/2, dy2+len, wdt*0.75, 0, Math.PI*2); x.fill();
+      }
+      x.globalAlpha = 1;
+    }
+
+    // tags
+    const tags = [
+      { t:'ARCAID',    s:52, a:-0.13, x:0.26, y:0.17, f:'#ff2e93' },
+      { t:'STREET',    s:38, a:0.09,  x:0.78, y:0.30, f:'#22e0ff' },
+      { t:'BALL',      s:40, a:-0.07, x:0.22, y:0.62, f:'#b6ff2e' },
+      { t:'3',         s:66, a:0.12,  x:0.82, y:0.70, f:'#ffd23f' }
+    ];
+    for (const tg of tags){
+      x.save();
+      x.translate(W*tg.x, FLOOR_Y*tg.y);
+      x.rotate(tg.a);
+      x.font = "700 " + tg.s + "px 'Secular One', Rubik, sans-serif";
+      x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.globalAlpha = 0.5;
+      x.fillStyle = 'rgba(0,0,0,0.55)';
+      x.fillText(tg.t, 4, 5);
+      x.fillStyle = tg.f;
+      x.fillText(tg.t, 0, 0);
+      x.globalAlpha = 0.85;
+      x.lineWidth = 2; x.strokeStyle = 'rgba(255,255,255,0.5)';
+      x.strokeText(tg.t, 0, 0);
+      x.restore();
+      x.globalAlpha = 1;
+    }
+
+    // chain-link fence across the top
+    x.strokeStyle = 'rgba(255,255,255,0.10)'; x.lineWidth = 1.4;
+    for (let i=-FLOOR_Y;i<W;i+=15){
+      x.beginPath(); x.moveTo(i,0); x.lineTo(i+70,70); x.stroke();
+      x.beginPath(); x.moveTo(i+70,0); x.lineTo(i,70); x.stroke();
+    }
+    x.fillStyle = 'rgba(0,0,0,0.35)'; x.fillRect(0,68,W,5);
+
+    // one wash over the whole wall plus a vignette — the paint stays visible, the ball and the
+    // rim stay the brightest things on screen
+    x.fillStyle = 'rgba(11,7,20,0.34)'; x.fillRect(0,0,W,FLOOR_Y);
+    const vig = x.createRadialGradient(W/2, FLOOR_Y*0.45, W*0.22, W/2, FLOOR_Y*0.45, W*0.78);
+    vig.addColorStop(0,'rgba(0,0,0,0)'); vig.addColorStop(1,'rgba(0,0,0,0.5)');
+    x.fillStyle = vig; x.fillRect(0,0,W,FLOOR_Y);
+
+    wall = c;
+  }
+
+  // ---------- drawing ----------
+  function drawCourt(){
+    if (!wall) buildWall();
+    g.drawImage(wall, 0, 0);
+
+    // asphalt
+    const fl = g.createLinearGradient(0,FLOOR_Y,0,H);
+    fl.addColorStop(0,'#3b3550'); fl.addColorStop(1,'#221d33');
+    g.fillStyle = fl; g.fillRect(0,FLOOR_Y,W,H-FLOOR_Y);
+
+    // street lines, painted in the same cans as the wall
+    g.strokeStyle = '#ffd23f'; g.lineWidth = 4;
+    g.beginPath(); g.moveTo(0,FLOOR_Y+3); g.lineTo(W,FLOOR_Y+3); g.stroke();
+    g.strokeStyle = '#22e0ff'; g.lineWidth = 3;
+    g.beginPath(); g.ellipse(W/2, FLOOR_Y+8, W*0.40, 58, 0, 0, Math.PI); g.stroke();
+    g.strokeStyle = '#ff2e93'; g.lineWidth = 3;
+    g.beginPath(); g.ellipse(W/2, FLOOR_Y+8, W*0.20, 30, 0, 0, Math.PI); g.stroke();
+  }
+
+  // fire mode: the rim burns — soft tongues all the way round it, plus a few embers drifting up
+  function drawFlames(x){
+    const t = S.tAnim;
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+
+    const halo = g.createRadialGradient(x, RIM_Y, 4, x, RIM_Y, RIM_HALF*2.2);
+    halo.addColorStop(0,'rgba(255,140,20,0.26)');
+    halo.addColorStop(0.55,'rgba(255,80,0,0.11)');
+    halo.addColorStop(1,'rgba(255,50,0,0)');
+    g.fillStyle = halo;
+    g.beginPath(); g.ellipse(x, RIM_Y, RIM_HALF*2.2, RIM_HALF*1.5, 0, 0, Math.PI*2); g.fill();
+
+    const N = 18;
+    for (let i=0;i<N;i++){
+      const a  = (i/N)*Math.PI*2 + 0.21;
+      const cs = Math.cos(a), sn = Math.sin(a);
+      const px = x + cs*(RIM_HALF+2) + Math.sin(i*4.7)*2.5;
+      const py = RIM_Y + sn*10;
+      const ph = t*(2.3 + (i%7)*0.31) + i*2.13;
+      // the tongues at the back of the ring stay low, so the rim keeps its shape
+      const depth = 0.55 + 0.45*(sn*0.5 + 0.5);
+      const h  = (16 + Math.sin(ph)*7 + Math.sin(ph*2.7+i)*3.5) * depth;
+      const w  = (7.5 + Math.sin(ph*1.6)*1.8) * depth;
+      const lean = Math.sin(ph*1.1)*4 + cs*2.5;
+
+      const grd = g.createLinearGradient(px, py+3, px+lean, py-h);
+      grd.addColorStop(0,   'rgba(255,40,0,0)');
+      grd.addColorStop(0.18,'rgba(255,92,0,0.5)');
+      grd.addColorStop(0.55,'rgba(255,168,30,0.55)');
+      grd.addColorStop(0.85,'rgba(255,232,140,0.32)');
+      grd.addColorStop(1,   'rgba(255,250,220,0)');
+      g.fillStyle = grd;
+      g.beginPath();
+      g.moveTo(px - w, py + 3);
+      g.bezierCurveTo(px - w*1.15, py - h*0.42, px + lean - w*0.5, py - h*0.72, px + lean, py - h);
+      g.bezierCurveTo(px + lean + w*0.5, py - h*0.72, px + w*1.15, py - h*0.42, px + w, py + 3);
+      g.quadraticCurveTo(px, py + 7, px - w, py + 3);
+      g.closePath(); g.fill();
+
+      // bright core
+      const core = g.createLinearGradient(px, py+2, px+lean*0.6, py-h*0.62);
+      core.addColorStop(0,'rgba(255,190,60,0)');
+      core.addColorStop(0.5,'rgba(255,225,130,0.42)');
+      core.addColorStop(1,'rgba(255,255,230,0)');
+      g.fillStyle = core;
+      g.beginPath();
+      g.moveTo(px - w*0.42, py + 2);
+      g.quadraticCurveTo(px - w*0.4, py - h*0.4, px + lean*0.6, py - h*0.62);
+      g.quadraticCurveTo(px + w*0.4, py - h*0.4, px + w*0.42, py + 2);
+      g.closePath(); g.fill();
+    }
+
+    for (let e=0;e<7;e++){
+      const ph = (t*0.75 + e*0.37) % 1;
+      const ex = x + Math.sin(e*2.9 + t*1.4)*(RIM_HALF+10);
+      const ey = RIM_Y - 12 - ph*54;
+      g.globalAlpha = (1-ph)*0.55;
+      g.fillStyle = e % 2 ? '#ffd23f' : '#ff8a1f';
+      g.beginPath(); g.arc(ex, ey, 2.4*(1-ph*0.6), 0, Math.PI*2); g.fill();
+    }
+    g.restore();
+  }
+
+  function drawHoop(){
+    const x = S.hoopX, fire = inFire();
+    const bt = boardTop();
+
+    // painted backboard
+    g.save();
+    if (S.boardFlash > 0){ g.shadowColor = 'rgba(255,255,255,0.9)'; g.shadowBlur = 22*S.boardFlash; }
+    g.fillStyle = fire ? 'rgba(255,210,63,0.30)' : 'rgba(34,224,255,0.16)';
+    g.strokeStyle = fire ? '#ffd23f' : '#22e0ff';
+    g.lineWidth = 4;
+    g.beginPath(); g.rect(x-BOARD_W/2, bt, BOARD_W, BOARD_H); g.fill(); g.stroke();
+    g.restore();
+    g.strokeStyle = fire ? '#ffd23f' : '#ff2e93'; g.lineWidth = 4;
+    g.strokeRect(x-32, bt+BOARD_H-48, 64, 42);
+    g.font = "700 15px 'Secular One', Rubik, sans-serif";
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = fire ? '#ffd23f' : '#b6ff2e';
+    g.fillText('ARCAID', x, bt+14);
+
+    if (fire) drawFlames(x);
+
+    // rim
+    g.save();
+    if (fire){ g.shadowColor = 'rgba(255,210,63,0.9)'; g.shadowBlur = 22; }
+    else if (S.rimFlash > 0){ g.shadowColor = '#ffffff'; g.shadowBlur = 20*S.rimFlash; }
+    if (fire){
+      // a dark underlay so the iron still reads against the flames
+      g.save(); g.shadowBlur = 0;
+      g.strokeStyle = 'rgba(70,22,0,0.9)'; g.lineWidth = 12; g.lineCap = 'round';
+      g.beginPath(); g.ellipse(x, RIM_Y, RIM_HALF, 9, 0, 0, Math.PI*2); g.stroke();
+      g.restore();
+    }
+    g.strokeStyle = fire ? '#fff2c4' : '#ff7a1f';
+    g.lineWidth = 7; g.lineCap = 'round';
+    g.beginPath(); g.ellipse(x, RIM_Y, RIM_HALF, 9, 0, 0, Math.PI*2); g.stroke();
+    g.restore();
+
+    // chain net — street courts run chains
+    const sag = 36 + S.netRipple*14;
+    g.strokeStyle = 'rgba(232,238,255,' + (0.55 + S.netRipple*0.4) + ')';
+    g.lineWidth = 1.8;
+    for (let i=0;i<9;i++){
+      const a = (i/9)*Math.PI*2;
+      const sx = x + Math.cos(a)*RIM_HALF, sy = RIM_Y + Math.sin(a)*9;
+      const ex = x + Math.cos(a)*RIM_HALF*0.42, ey = RIM_Y + sag;
+      g.beginPath();
+      for (let s=0;s<=5;s++){
+        const f = s/5;
+        const px = sx + (ex-sx)*f + (s%2 ? 3 : -3);
+        const py = sy + (ey-sy)*f;
+        if (s === 0) g.moveTo(px,py); else g.lineTo(px,py);
+      }
+      g.stroke();
+    }
+    for (let r=1;r<=3;r++){
+      const f = r/4, rr = RIM_HALF*(1-f*0.56);
+      g.beginPath(); g.ellipse(x, RIM_Y + sag*f, rr, 6*(1-f*0.5), 0, 0, Math.PI*2); g.stroke();
+    }
+  }
+
+  // the clock bonus hangs inside the net and travels with the rim — sink the shot and it is yours
+  function drawToken(){
+    if (!S.token) return;
+    const x = S.hoopX, y = RIM_Y + 30;
+    const last = S.token.shots <= 1 && !S.token.fresh;
+    const pulse = 1 + Math.sin(S.tAnim*(last ? 9 : 5.2))*(last ? 0.11 : 0.07);
+    const tint = last ? '255,180,40' : '34,224,255';
+    g.save();
+
+    const glow = g.createRadialGradient(x, y, 3, x, y, 44);
+    glow.addColorStop(0,'rgba(' + tint + ',0.40)');
+    glow.addColorStop(1,'rgba(' + tint + ',0)');
+    g.fillStyle = glow;
+    g.beginPath(); g.arc(x, y, 44, 0, Math.PI*2); g.fill();
+
+    g.translate(x, y); g.scale(pulse, pulse);
+    g.fillStyle = last ? '#ffb428' : '#22e0ff';
+    g.strokeStyle = '#06222e'; g.lineWidth = 3;
+    g.beginPath(); g.arc(0, 0, 22, 0, Math.PI*2); g.fill(); g.stroke();
+
+    // little clock face
+    g.strokeStyle = '#06222e'; g.lineWidth = 2;
+    g.beginPath(); g.arc(0, -8, 7, 0, Math.PI*2); g.stroke();
+    g.beginPath(); g.moveTo(0,-11.5); g.lineTo(0,-8.5); g.stroke();   // winder
+    g.lineWidth = 1.8; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(0,-8); g.lineTo(0,-12.2); g.stroke();     // minute hand
+    g.beginPath(); g.moveTo(0,-8); g.lineTo(3.6,-6.6); g.stroke();    // hour hand
+
+    g.fillStyle = '#06222e';
+    g.font = "700 13px 'Secular One', Rubik, sans-serif";
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    if ('direction' in g) g.direction = 'ltr';
+    g.fillText('+' + tokenBonus(), 0, 10);
+    g.restore();
+  }
+
+  // winning the clock is the one moment worth a flourish on the court itself — a shockwave off
+  // the net, sparks, and the reward rising out of the rim
+  function drawTokenPop(){
+    const pop = S.tokenPop; if (!pop) return;
+    const f    = Math.min(1, pop.t/1.2);
+    const ease = 1 - Math.pow(1-f, 3);
+    const col  = pop.bonus >= TIME_BONUS_1 ? '#22e0ff' : '#ffb428';
+    const fade = f < 0.72 ? 1 : Math.max(0, (1-f)/0.28);
+
+    g.save();
+    if (f < 0.6){
+      const k = f/0.6;
+      g.globalAlpha = (1-k)*0.9;
+      g.strokeStyle = col; g.lineWidth = 6*(1-k) + 1;
+      g.beginPath(); g.arc(pop.x, pop.y, 16 + k*120, 0, Math.PI*2); g.stroke();
+      g.globalAlpha = (1-k)*0.45;
+      g.beginPath(); g.arc(pop.x, pop.y, 16 + k*72, 0, Math.PI*2); g.stroke();
+    }
+    g.globalAlpha = fade;
+    for (let i=0;i<12;i++){
+      const a = (i/12)*Math.PI*2 + pop.t*1.4;
+      const d = 14 + ease*82;
+      g.fillStyle = (i % 2) ? col : '#ffffff';
+      g.beginPath();
+      g.arc(pop.x + Math.cos(a)*d, pop.y + Math.sin(a)*d*0.75 - ease*34, 3.6*(1-f) + 0.6, 0, Math.PI*2);
+      g.fill();
+    }
+    g.translate(pop.x, pop.y - ease*116);
+    const sc = 0.65 + ease*0.6;
+    g.scale(sc, sc);
+    g.font = "700 22px 'Secular One', Rubik, sans-serif";
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineJoin = 'round'; g.lineWidth = 6; g.strokeStyle = 'rgba(8,4,16,0.92)';
+    const label = 'עוד ' + pop.bonus + ' שניות!';
+    g.strokeText(label, 0, 0);
+    g.fillStyle = col; g.fillText(label, 0, 0);
+    g.font = "700 13px 'Rubik', sans-serif";
+    g.strokeText('⏱️', 0, -22); g.fillText('⏱️', 0, -22);
+    g.restore();
+  }
+
+  // the arc the ball will actually fly, dotted out while the finger is down, plus a ring on the
+  // point being aimed at — nothing is hidden from the player
+  function drawAim(){
+    if (!S.dragging || !S.dragTo) return;
+    if (Math.hypot(S.dragTo.x - HOME.x, S.dragTo.y - HOME.y) < 14) return;
+    if (S.dragTo.y > HOME.y - 20) return;
+    const t = aimTarget(S.dragTo);
+    const sol = solveShot(t.x, t.y);
+    const col = inFire() ? '#ffd23f' : '#b6ff2e';
+
+    g.save();
+    g.fillStyle = col;
+    for (let i=1;i<=22;i++){
+      const tt = sol.t*(i/22);
+      const px = HOME.x + sol.vx*tt;
+      const py = HOME.y + sol.vy*tt + GRAV*tt*tt/2;
+      g.globalAlpha = 0.85 - i*0.024;
+      g.beginPath(); g.arc(px, py, 4.2 - i*0.09, 0, Math.PI*2); g.fill();
+    }
+    g.globalAlpha = 1;
+    g.strokeStyle = col; g.lineWidth = 3;
+    g.beginPath(); g.arc(t.x, t.y, 13, 0, Math.PI*2); g.stroke();
+    g.beginPath(); g.moveTo(t.x-19,t.y); g.lineTo(t.x-7,t.y); g.moveTo(t.x+7,t.y); g.lineTo(t.x+19,t.y);
+    g.moveTo(t.x,t.y-19); g.lineTo(t.x,t.y-7); g.moveTo(t.x,t.y+7); g.lineTo(t.x,t.y+19); g.stroke();
+    g.restore();
+  }
+
+  // chalk rings on the floor: the spot the shooter is standing on is lit up, the rest are faint
+  function drawSpots(){
+    g.save();
+    for (let i=0;i<SPOTS.length;i++){
+      const here = (SPOTS[i] === HOME.x);
+      g.globalAlpha = here ? 0.85 : 0.22;
+      g.strokeStyle = here ? '#b6ff2e' : 'rgba(255,255,255,0.75)';
+      g.lineWidth = here ? 3 : 2;
+      g.setLineDash(here ? [] : [6,7]);
+      g.beginPath(); g.ellipse(SPOTS[i], FLOOR_Y+26, 27, 9, 0, 0, Math.PI*2); g.stroke();
+      if (here){
+        g.setLineDash([]);
+        g.globalAlpha = 0.5;
+        g.beginPath(); g.ellipse(SPOTS[i], FLOOR_Y+26, 34+S.hopIn*10, 11+S.hopIn*4, 0, 0, Math.PI*2); g.stroke();
+      }
+    }
+    g.setLineDash([]);
+    g.restore();
+  }
+
+  function drawBall(){
+    const b = S.ball;
+    const x = b ? b.x : HOME.x, y = b ? b.y : (HOME.y - S.hopIn*S.hopIn*26);
+    const spin = b ? b.spin : 0;
+
+    if (b){
+      g.save();
+      for (let i=0;i<S.trail.length;i++){
+        const t = S.trail[i], f = i/S.trail.length;
+        g.globalAlpha = f*0.3;
+        g.fillStyle = '#ff7a1f';
+        g.beginPath(); g.arc(t.x, t.y, BALL_R*0.55*f, 0, Math.PI*2); g.fill();
+      }
+      g.restore();
+    }
+
+    const sq = Math.max(0.25, 1 - Math.abs(FLOOR_Y - y)/520);
+    g.save(); g.globalAlpha = 0.34*sq;
+    g.fillStyle = '#000';
+    g.beginPath(); g.ellipse(x, FLOOR_Y+26, BALL_R*1.05*sq, BALL_R*0.32*sq, 0, 0, Math.PI*2); g.fill();
+    g.restore();
+
+    g.save();
+    g.translate(x,y); g.rotate(spin);
+    const grd = g.createRadialGradient(-BALL_R*0.35, -BALL_R*0.4, BALL_R*0.15, 0, 0, BALL_R);
+    grd.addColorStop(0,'#ffc184'); grd.addColorStop(0.55,'#ff7a1f'); grd.addColorStop(1,'#b03f08');
+    g.beginPath(); g.arc(0,0,BALL_R,0,Math.PI*2); g.fillStyle = grd; g.fill();
+    g.strokeStyle = 'rgba(30,12,4,0.85)'; g.lineWidth = 2.2;
+    g.beginPath(); g.arc(0,0,BALL_R,0,Math.PI*2); g.stroke();
+    g.beginPath(); g.moveTo(-BALL_R,0); g.lineTo(BALL_R,0); g.stroke();
+    g.beginPath(); g.moveTo(0,-BALL_R); g.lineTo(0,BALL_R); g.stroke();
+    g.beginPath(); g.ellipse(0,0,BALL_R*0.5,BALL_R,0,0,Math.PI*2); g.stroke();
+    g.restore();
+  }
+
+  function draw(){
+    g.clearRect(0,0,W,H);
+    drawCourt();
+    drawSpots();
+    drawHoop();
+    drawToken();
+    drawAim();
+    drawBall();
+    drawTokenPop();
+  }
+
+  // ---------- pause / arcAId bar ----------
+  function setPaused(on){
+    S.paused = !!on;
+    if (S.paused){
+      S.dragging = false; S.dragTo = null;
+      powerWrap.classList.remove('active');
+      powerFill.style.width = '0%'; powerText.textContent = '0%';
+    }
+    pauseVeil.classList.toggle('hidden', !S.paused);
+  }
+
+  let autoPaused = false;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden){
+      if (!S.paused){ autoPaused = true; setPaused(true); if (window.Arcade) Arcade.setPaused(true); }
+    } else if (autoPaused){
+      autoPaused = false; setPaused(false); if (window.Arcade) Arcade.setPaused(false);
+    }
+  });
+
+  playAgainBtn.addEventListener('click', restart);
+  startBtn.addEventListener('click', () => {
+    ctx();
+    startBtn.style.display = 'none';
+    countNum.classList.remove('hidden');
+    nextSpot();
+    runCountdown();
+  }, { once:true });
+
+  if (window.Leaderboard){
+    Leaderboard.init({ game:'hoops', title:'סל הרחוב', scoreLabel:'נקודות' });
+  }
+  if (window.Arcade){
+    Arcade.controls({
+      onPause:   function(){ setPaused(true); },
+      onResume:  function(){ setPaused(false); },
+      onRestart: function(){ setPaused(false); restart(); },
+      onMute:    function(m){ S.muted = m; },
+      theme: true
+    });
+  }
+
+  renderTimer();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
