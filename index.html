@@ -202,7 +202,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
       <div class="power-caption"><span>עוצמת זריקה</span><span id="powerText">0%</span></div>
     </div>
 
-    <div class="hint">🏀 מושכים מהכדור לכיוון הסל — הקו המקווקו מראה בדיוק לאן הכדור יגיע. אחרי כל זריקה עוברים לנקודה אחרת. שלושה ברצף = מצב אש לשלוש זריקות 🔥, ושעון בתוך הרשת = עוד 10 שניות, ובניסיון השני 5 ⏱️</div>
+    <div class="hint">🏀 מושכים מהכדור לכיוון הסל — הקו המקווקו מראה בדיוק לאן הכדור יגיע. שלושה ברצף = מצב אש לשלוש זריקות 🔥. בסל מופיעים בונוסים שזוכים בהם בקליעה: שעון לתוספת זמן ⏱️ וכדור אש שמפיל חמישה כדורים בוערים לרצפה — בוחרים כל אחד מהם, וכל סל איתו כפול 🔥</div>
   </div>
 
   <div class="modal-veil" id="overModal">
@@ -250,6 +250,12 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   const HOOP_V0   = 52, HOOP_STEP = 7, HOOP_MAX = 130;
   const FIRE_AT      = 3;
   const FIRE_SHOTS   = 3;          // fire mode lasts a number of shots, not a stretch of seconds
+  // a longer streak rains flaming balls onto the floor: each one you pick up doubles again, so a
+  // shot taken while both are running is worth four times
+  const FIREBALL_AT    = 5;
+  const FIREBALL_COUNT = 5;
+  const FB_R           = 13;
+  const FB_GRAV        = 1700;
   // the clock bonus hangs in the net: you win it by sinking the shot, so it never costs a turn
   // the clock is worth less on the second try, so the first look at it is the one to take
   const TIME_EVERY = 5, TIME_BONUS_1 = 10, TIME_BONUS_2 = 5, TIME_AWARDS_MAX = 3, TOKEN_SHOTS = 2;
@@ -267,7 +273,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     makes:0, paused:false, over:false, started:false, locked:true, timeUp:false, muted:false,
     hoopX:W/2, hoopDir:1, hopIn:0, acc:0, tAnim:0,
     ball:null, dragging:false, dragTo:null,
-    fireShots:0, fireFresh:false, timeAwards:0, tokenPop:null,
+    fireShots:0, fireFresh:false, fireBalls:[], fbPops:[], timeAwards:0, fireToken:null, pops:[],
     netRipple:0, rimFlash:0, boardFlash:0, token:null, timerHandle:null, trail:[]
   };
 
@@ -333,7 +339,10 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   function vibrate(p){ if (navigator.vibrate) try{ navigator.vibrate(p); }catch(e){} }
 
   // ---------- helpers ----------
-  const inFire = () => S.fireShots > 0;
+  // the rim burns while either bonus is running
+  const inFire    = () => S.fireShots > 0 || S.fireBalls.length > 0;
+  const fireMult  = () => (S.fireShots > 0 ? 2 : 1) * (S.fireBalls.length > 0 ? 2 : 1);
+  const multWord  = m => m >= 4 ? ' פי ארבע 🔥🔥' : (m === 2 ? ' כפול 🔥' : '');
   const tokenBonus = () => (S.token && S.token.shots >= TOKEN_SHOTS) ? TIME_BONUS_1 : TIME_BONUS_2;
   const SWISH_CALLS = ['סוויש! 🎯', 'רק רשת! 🥅', 'נטו! ✨'];
   const NEAR_CALLS  = ['כמעט! 😤', 'קרוב מאוד', 'על השפה 😬', 'כמעט נכנס'];
@@ -355,6 +364,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     if (!pool.length) return;
     spotIdx = pool[Math.floor(Math.random()*pool.length)];
     HOME.x = SPOTS[spotIdx];
+    shotOrigin.x = HOME.x; shotOrigin.y = HOME.y; shotOrigin.idx = -1;
     S.hopIn = 1;
   }
 
@@ -379,7 +389,13 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     message.classList.add('show');
   }
   function updateBanner(){
-    if (inFire()){ banner.textContent = '🔥 מצב אש — כל סל כפול · עוד ' + S.fireShots + (S.fireShots === 1 ? ' זריקה' : ' זריקות'); banner.classList.add('show'); }
+    if (inFire()){
+      const m = fireMult(), bits = [];
+      if (S.fireShots > 0) bits.push('עוד ' + S.fireShots + (S.fireShots === 1 ? ' זריקה' : ' זריקות'));
+      if (S.fireBalls.length > 0) bits.push(S.fireBalls.length + (S.fireBalls.length === 1 ? ' כדור אש' : ' כדורי אש'));
+      banner.textContent = '🔥 ' + (m >= 4 ? 'אש כפולה — כל סל פי ארבע' : 'מצב אש — כל סל כפול') + ' · ' + bits.join(' · ');
+      banner.classList.add('show');
+    }
     else if (S.streak >= 2){ banner.textContent = 'רצף ' + S.streak; banner.classList.add('show'); }
     else { banner.classList.remove('show'); banner.textContent = ''; }
   }
@@ -428,7 +444,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
       score:0, timeLeft:ROUND_SECONDS, streak:0, makes:0,
       over:false, started:false, locked:true, timeUp:false,
       hoopX:W/2, hoopDir:1, hopIn:0, acc:0, ball:null, dragging:false, dragTo:null,
-      fireShots:0, fireFresh:false, timeAwards:0, tokenPop:null,
+      fireShots:0, fireFresh:false, fireBalls:[], fbPops:[], timeAwards:0, fireToken:null, pops:[],
       netRipple:0, rimFlash:0, boardFlash:0, token:null, trail:[]
     });
     spotIdx = 2; HOME.x = SPOTS[2]; nextSpot();
@@ -445,7 +461,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   function endRound(){
     S.over = true;
     if (S.timerHandle) clearInterval(S.timerHandle);
-    S.token = null; S.ball = null;
+    S.token = null; S.fireToken = null; S.ball = null;
     finalScoreEl.textContent = S.score;
     finalStreakEl.textContent = S.bestStreak;
     overModal.classList.add('show');
@@ -458,20 +474,27 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   }
 
   // ---------- shooting ----------
+  // while flaming balls are lying on the floor they ARE the ball — you pick whichever one you
+  // like and the shot leaves from where it sits, so the origin is not always the chalk spot
+  const shotOrigin = { x: HOME.x, y: HOME.y, idx: -1 };
+  function resetOrigin(){ shotOrigin.x = HOME.x; shotOrigin.y = HOME.y; shotOrigin.idx = -1; }
+
   // where the finger is pointing: the drag, doubled, clamped to the court
   function aimTarget(to){
+    const o = shotOrigin;
     return {
-      x: Math.max(10, Math.min(W-10, HOME.x + (to.x - HOME.x)*AIM_GAIN)),
-      y: Math.max(AIM_Y_MIN, Math.min(HOME.y - 50, HOME.y + (to.y - HOME.y)*AIM_GAIN))
+      x: Math.max(10, Math.min(W-10, o.x + (to.x - o.x)*AIM_GAIN)),
+      y: Math.max(AIM_Y_MIN, Math.min(o.y - 50, o.y + (to.y - o.y)*AIM_GAIN))
     };
   }
   // the one arc that drops through that point: apex a fixed height above it, so the ball always
   // comes down onto the rim rather than sliding in flat
   function solveShot(tx, ty){
+    const o = shotOrigin;
     const apexY = Math.min(ty, RIM_Y) - ARC_OVER;
-    const u  = Math.sqrt(2*GRAV*(HOME.y - apexY));
+    const u  = Math.sqrt(2*GRAV*(o.y - apexY));
     const tt = u/GRAV + Math.sqrt(2*Math.max(0,(ty - apexY))/GRAV);
-    return { vx:(tx - HOME.x)/tt, vy:-u, t:tt };
+    return { vx:(tx - o.x)/tt, vy:-u, t:tt };
   }
   function shotPower(sol){
     return Math.round(Math.max(0, Math.min(1, (Math.hypot(sol.vx,sol.vy) - V_MIN)/(V_MAX - V_MIN)))*100);
@@ -480,9 +503,13 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   function launchAt(tx, ty){
     const sol = solveShot(tx, ty);
     S.acc = 0;
-    S.ball = { x:HOME.x, y:HOME.y, vx:sol.vx, vy:sol.vy, t:0, spin:0, apexed:false,
+    const ox = shotOrigin.x, oy = shotOrigin.y;
+    const onFire = takeFireBall();                       // a miss burns it too
+    const mult = (S.fireShots > 0 ? 2 : 1) * (onFire ? 2 : 1);
+    S.ball = { x:ox, y:oy, vx:sol.vx, vy:sol.vy, t:0, spin:0, apexed:false, onFire, mult,
                touchedIron:false, touchedGlass:false, scored:false, done:false };
     S.trail = [];
+    updateBanner();
     startTimer();
     sfx.release(); vibrate(10);
   }
@@ -544,7 +571,8 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
           b.scored = true;
           S.netRipple = 1;
           if (S.token) collectToken();
-          scoreBasket(!b.touchedIron && !b.touchedGlass);
+          if (S.fireToken) collectFireToken();
+          scoreBasket(!b.touchedIron && !b.touchedGlass, b.mult || 1);
         }
       }
 
@@ -567,28 +595,40 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
         if (S.token.fresh) S.token.fresh = false;
         else if (--S.token.shots <= 0) S.token = null;
       }
+      if (S.fireToken){
+        if (S.fireToken.fresh) S.fireToken.fresh = false;
+        else if (--S.fireToken.shots <= 0) S.fireToken = null;
+      }
       S.ball = null;
-      nextSpot();
+      if (S.fireBalls.length === 0) nextSpot(); else resetOrigin();
       if (S.timeUp && !S.over) endRound();
     }
   }
 
-  function scoreBasket(swish){
+  function scoreBasket(swish, mult){
     S.makes++;
     S.streak++;
     if (S.streak > S.bestStreak) S.bestStreak = S.streak;
-    let pts = swish ? 3 : 2;
-    const fire = inFire();
-    if (fire) pts *= 2;
+    const pts = (swish ? 3 : 2) * mult;
     S.score += pts;
     scoreEl.textContent = S.score;
-    if (S.streak % FIRE_AT === 0){
-      const again = inFire();
+
+    const lit  = S.streak % FIRE_AT === 0;
+    const rain = S.streak % FIREBALL_AT === 0;
+    let again = false;
+    if (lit){
+      again = S.fireShots > 0;
       S.fireShots = FIRE_SHOTS; S.fireFresh = true;
       sfx.fire(); vibrate([12,40,12,40]);
+    }
+    if (rain){
+      spawnFireToken();
+      sfx.fire(); vibrate([12,40,12,40,12]);
+      showMessage('🔥 בונוס אש בסל — קלעו כדי לזכות בחמישה כדורי אש', 'var(--ball-2)');
+    } else if (lit){
       showMessage('🔥 ' + (again ? 'עוד ' : 'מצב אש — ') + FIRE_SHOTS + ' זריקות ניקוד כפול!', 'var(--lime)');
     } else {
-      showMessage((swish ? pick(SWISH_CALLS) + ' ' : 'סל! 🏀 ') + pts + ' נק׳' + (fire ? ' כפול 🔥' : ''),
+      showMessage((swish ? pick(SWISH_CALLS) + ' ' : 'סל! 🏀 ') + pts + ' נק׳' + multWord(mult),
                   swish ? 'var(--lime)' : 'var(--yellow)');
       swish ? sfx.swish() : sfx.make();
       vibrate(swish ? [10,30,10] : 14);
@@ -615,6 +655,39 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     setTimeout(()=>{ if (!S.over) message.classList.remove('show'); }, 800);
   }
 
+  // five flaming balls tumble onto the floor; each one you shoot doubles the basket again
+  function dropFireBalls(){
+    for (let i=0;i<FIREBALL_COUNT;i++){
+      S.fireBalls.push({
+        x: 56 + (W - 112) * (i / (FIREBALL_COUNT - 1)),
+        y: -26 - i*32, vy: 0, bounces: 0, rest: false, spin: 0, seed: Math.random()*7
+      });
+    }
+    if (S.fireBalls.length > 12) S.fireBalls.splice(0, S.fireBalls.length - 12);
+  }
+  function spawnFireToken(){ S.fireToken = { shots: TOKEN_SHOTS, fresh: true }; }
+  function collectFireToken(){
+    S.fireToken = null;
+    dropFireBalls();
+    S.pops.push({ t:0, kind:'fire', x:S.hoopX, y:RIM_Y + 30 });
+    sfx.fire(); vibrate([14,40,14,40,24]);
+  }
+
+  // the ball you throw is the one you grabbed; without a grab (a scripted shot) take the nearest
+  function takeFireBall(){
+    if (!S.fireBalls.length) return false;
+    let idx = shotOrigin.idx;
+    if (idx < 0 || idx >= S.fireBalls.length){
+      idx = 0;
+      for (let i=1;i<S.fireBalls.length;i++){
+        if (Math.abs(S.fireBalls[i].x - shotOrigin.x) < Math.abs(S.fireBalls[idx].x - shotOrigin.x)) idx = i;
+      }
+    }
+    const fb = S.fireBalls.splice(idx, 1)[0];
+    S.fbPops.push({ x: fb.x, y: fb.y, t: 0 });
+    return true;
+  }
+
   function spawnToken(){
     if (S.timeAwards >= TIME_AWARDS_MAX) return;
     S.token = { shots: TOKEN_SHOTS, fresh: true };
@@ -626,7 +699,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     S.timeAwards += 1;
     S.timeLeft = Math.min(99, S.timeLeft + bonus);
     renderTimer(); flashTime(bonus);
-    S.tokenPop = { t:0, bonus:bonus, x:S.hoopX, y:RIM_Y + 30 };
+    S.pops.push({ t:0, kind:'clock', bonus:bonus, x:S.hoopX, y:RIM_Y + 30 });
     sfx.timeWin(); vibrate([14,40,14,40,24]);
   }
 
@@ -635,11 +708,28 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     const r = cv.getBoundingClientRect();
     return { x: (e.clientX - r.left) * (W / r.width), y: (e.clientY - r.top) * (H / r.height) };
   }
+  // which ball the finger came down on — any of the flaming ones, or the plain one at the spot
+  function grabAt(p){
+    if (S.fireBalls.length){
+      let idx = -1, best = 1e9;
+      for (let i=0;i<S.fireBalls.length;i++){
+        const d = Math.hypot(p.x - S.fireBalls[i].x, p.y - S.fireBalls[i].y);
+        if (d < best){ best = d; idx = i; }
+      }
+      if (idx >= 0 && best <= 74) return { x:S.fireBalls[idx].x, y:S.fireBalls[idx].y, idx };
+      return null;
+    }
+    if (Math.hypot(p.x - HOME.x, p.y - HOME.y) <= 84) return { x:HOME.x, y:HOME.y, idx:-1 };
+    return null;
+  }
+
   function onDown(e){
     if (!actx) ctx();
     if (S.locked || S.paused || S.over || S.timeUp || S.ball) return;
     const p = courtPoint(e);
-    if (Math.hypot(p.x - HOME.x, p.y - HOME.y) > 84) return;
+    const grab = grabAt(p);
+    if (!grab) return;
+    shotOrigin.x = grab.x; shotOrigin.y = grab.y; shotOrigin.idx = grab.idx;
     S.dragging = true;
     S.dragTo = p;
     powerWrap.classList.add('active');
@@ -648,7 +738,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   function onMove(e){
     if (!S.dragging) return;
     S.dragTo = courtPoint(e);
-    if (S.dragTo.y < HOME.y - 20){
+    if (S.dragTo.y < shotOrigin.y - 20){
       const t = aimTarget(S.dragTo);
       const pct = shotPower(solveShot(t.x, t.y));
       powerFill.style.width = pct + '%'; powerText.textContent = pct + '%';
@@ -661,8 +751,8 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     const to = S.dragTo; S.dragTo = null;
     powerFill.style.width = '0%'; powerText.textContent = '0%';
     if (!to) return;
-    if (Math.hypot(to.x - HOME.x, to.y - HOME.y) < 18) return;   // a tap is not a shot
-    if (to.y > HOME.y - 20){                                      // it has to point up the court
+    if (Math.hypot(to.x - shotOrigin.x, to.y - shotOrigin.y) < 18) return;   // a tap is not a shot
+    if (to.y > shotOrigin.y - 20){                                // it has to point up the court
       showMessage('למשוך לכיוון הסל ☝️','var(--muted)');
       setTimeout(()=>message.classList.remove('show'), 700);
       return;
@@ -694,7 +784,27 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     }
 
     if (S.ball) stepBall(dt);
-    if (S.tokenPop){ S.tokenPop.t += dt; if (S.tokenPop.t > 1.2) S.tokenPop = null; }
+    for (let i=0;i<S.fireBalls.length;i++){
+      const fb = S.fireBalls[i];
+      if (fb.rest){ fb.spin *= 0.93; continue; }
+      fb.vy += FB_GRAV*dt;
+      fb.y  += fb.vy*dt;
+      fb.spin += fb.vy*dt*0.004;
+      if (fb.y >= FLOOR_Y + 30){
+        fb.y = FLOOR_Y + 30;
+        fb.bounces += 1;
+        if (fb.bounces >= 3 || Math.abs(fb.vy) < 170){ fb.vy = 0; fb.rest = true; }
+        else fb.vy = -Math.abs(fb.vy)*0.42;
+      }
+    }
+    for (let i=S.fbPops.length-1;i>=0;i--){
+      S.fbPops[i].t += dt;
+      if (S.fbPops[i].t > 0.5) S.fbPops.splice(i,1);
+    }
+    for (let i=S.pops.length-1;i>=0;i--){
+      S.pops[i].t += dt;
+      if (S.pops[i].t > 1.2) S.pops.splice(i,1);
+    }
     if (S.hopIn > 0)      S.hopIn      = Math.max(0, S.hopIn - dt*3.2);
     if (S.netRipple > 0)  S.netRipple  = Math.max(0, S.netRipple - dt*2.6);
     if (S.rimFlash > 0)   S.rimFlash   = Math.max(0, S.rimFlash - dt*3);
@@ -936,88 +1046,119 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   }
 
   // the clock bonus hangs inside the net and travels with the rim — sink the shot and it is yours
+  // both badges hang inside the net; when they are up together they sit side by side
+  function netBadges(){
+    const list = [];
+    if (S.token)     list.push('clock');
+    if (S.fireToken) list.push('fire');
+    return list.map((kind, i) => ({
+      kind,
+      x: S.hoopX + (list.length === 2 ? (i === 0 ? -25 : 25) : 0),
+      y: RIM_Y + 30
+    }));
+  }
+
   function drawToken(){
-    if (!S.token) return;
-    const x = S.hoopX, y = RIM_Y + 30;
-    const last = S.token.shots <= 1 && !S.token.fresh;
-    const pulse = 1 + Math.sin(S.tAnim*(last ? 9 : 5.2))*(last ? 0.11 : 0.07);
-    const tint = last ? '255,180,40' : '34,224,255';
-    g.save();
+    const badges = netBadges();
+    for (let bi=0; bi<badges.length; bi++){
+      const bdg  = badges[bi];
+      const tok  = bdg.kind === 'fire' ? S.fireToken : S.token;
+      const last = tok.shots <= 1 && !tok.fresh;
+      const pulse = 1 + Math.sin(S.tAnim*(last ? 9 : 5.2))*(last ? 0.11 : 0.07);
+      const tint = bdg.kind === 'fire' ? (last ? '255,120,20' : '255,170,40')
+                                       : (last ? '255,180,40' : '34,224,255');
+      const x = bdg.x, y = bdg.y, r = badges.length === 2 ? 19 : 22;
+      g.save();
 
-    const glow = g.createRadialGradient(x, y, 3, x, y, 44);
-    glow.addColorStop(0,'rgba(' + tint + ',0.40)');
-    glow.addColorStop(1,'rgba(' + tint + ',0)');
-    g.fillStyle = glow;
-    g.beginPath(); g.arc(x, y, 44, 0, Math.PI*2); g.fill();
+      const glow = g.createRadialGradient(x, y, 3, x, y, 44);
+      glow.addColorStop(0,'rgba(' + tint + ',0.40)');
+      glow.addColorStop(1,'rgba(' + tint + ',0)');
+      g.fillStyle = glow;
+      g.beginPath(); g.arc(x, y, 44, 0, Math.PI*2); g.fill();
 
-    g.translate(x, y); g.scale(pulse, pulse);
-    g.fillStyle = last ? '#ffb428' : '#22e0ff';
-    g.strokeStyle = '#06222e'; g.lineWidth = 3;
-    g.beginPath(); g.arc(0, 0, 22, 0, Math.PI*2); g.fill(); g.stroke();
+      g.translate(x, y); g.scale(pulse, pulse);
 
-    // little clock face
-    g.strokeStyle = '#06222e'; g.lineWidth = 2;
-    g.beginPath(); g.arc(0, -8, 7, 0, Math.PI*2); g.stroke();
-    g.beginPath(); g.moveTo(0,-11.5); g.lineTo(0,-8.5); g.stroke();   // winder
-    g.lineWidth = 1.8; g.lineCap = 'round';
-    g.beginPath(); g.moveTo(0,-8); g.lineTo(0,-12.2); g.stroke();     // minute hand
-    g.beginPath(); g.moveTo(0,-8); g.lineTo(3.6,-6.6); g.stroke();    // hour hand
-
-    g.fillStyle = '#06222e';
-    g.font = "700 13px 'Secular One', Rubik, sans-serif";
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    if ('direction' in g) g.direction = 'ltr';
-    g.fillText('+' + tokenBonus(), 0, 10);
-    g.restore();
+      if (bdg.kind === 'fire'){
+        g.fillStyle = last ? '#ff7a1f' : '#ffaa28';
+        g.strokeStyle = '#3a1000'; g.lineWidth = 3;
+        g.beginPath(); g.arc(0, 0, r, 0, Math.PI*2); g.fill(); g.stroke();
+        // a little basketball with a flame over it
+        g.strokeStyle = '#3a1000'; g.lineWidth = 1.8;
+        g.beginPath(); g.arc(0, -4, 7.5, 0, Math.PI*2); g.stroke();
+        g.beginPath(); g.moveTo(-7.5,-4); g.lineTo(7.5,-4); g.stroke();
+        g.beginPath(); g.ellipse(0,-4,3.6,7.5,0,0,Math.PI*2); g.stroke();
+        g.fillStyle = '#3a1000';
+        g.font = "700 12px 'Secular One', Rubik, sans-serif";
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        if ('direction' in g) g.direction = 'ltr';
+        g.fillText('×' + FIREBALL_COUNT, 0, r - 7);
+      } else {
+        g.fillStyle = last ? '#ffb428' : '#22e0ff';
+        g.strokeStyle = '#06222e'; g.lineWidth = 3;
+        g.beginPath(); g.arc(0, 0, r, 0, Math.PI*2); g.fill(); g.stroke();
+        g.strokeStyle = '#06222e'; g.lineWidth = 2;
+        g.beginPath(); g.arc(0, -7, 6.5, 0, Math.PI*2); g.stroke();
+        g.beginPath(); g.moveTo(0,-10.5); g.lineTo(0,-7.5); g.stroke();
+        g.lineWidth = 1.8; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(0,-7); g.lineTo(0,-11); g.stroke();
+        g.beginPath(); g.moveTo(0,-7); g.lineTo(3.4,-5.6); g.stroke();
+        g.fillStyle = '#06222e';
+        g.font = "700 12px 'Secular One', Rubik, sans-serif";
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        if ('direction' in g) g.direction = 'ltr';
+        g.fillText('+' + tokenBonus(), 0, r - 7);
+      }
+      g.restore();
+    }
   }
 
-  // winning the clock is the one moment worth a flourish on the court itself — a shockwave off
-  // the net, sparks, and the reward rising out of the rim
   function drawTokenPop(){
-    const pop = S.tokenPop; if (!pop) return;
-    const f    = Math.min(1, pop.t/1.2);
-    const ease = 1 - Math.pow(1-f, 3);
-    const col  = pop.bonus >= TIME_BONUS_1 ? '#22e0ff' : '#ffb428';
-    const fade = f < 0.72 ? 1 : Math.max(0, (1-f)/0.28);
+    for (let pi=0; pi<S.pops.length; pi++){
+      const pop  = S.pops[pi];
+      const fire = pop.kind === 'fire';
+      const f    = Math.min(1, pop.t/1.2);
+      const ease = 1 - Math.pow(1-f, 3);
+      const col  = fire ? '#ffaa28' : (pop.bonus >= TIME_BONUS_1 ? '#22e0ff' : '#ffb428');
+      const fade = f < 0.72 ? 1 : Math.max(0, (1-f)/0.28);
 
-    g.save();
-    if (f < 0.6){
-      const k = f/0.6;
-      g.globalAlpha = (1-k)*0.9;
-      g.strokeStyle = col; g.lineWidth = 6*(1-k) + 1;
-      g.beginPath(); g.arc(pop.x, pop.y, 16 + k*120, 0, Math.PI*2); g.stroke();
-      g.globalAlpha = (1-k)*0.45;
-      g.beginPath(); g.arc(pop.x, pop.y, 16 + k*72, 0, Math.PI*2); g.stroke();
+      g.save();
+      if (f < 0.6){
+        const k = f/0.6;
+        g.globalAlpha = (1-k)*0.9;
+        g.strokeStyle = col; g.lineWidth = 6*(1-k) + 1;
+        g.beginPath(); g.arc(pop.x, pop.y, 16 + k*120, 0, Math.PI*2); g.stroke();
+        g.globalAlpha = (1-k)*0.45;
+        g.beginPath(); g.arc(pop.x, pop.y, 16 + k*72, 0, Math.PI*2); g.stroke();
+      }
+      g.globalAlpha = fade;
+      for (let i=0;i<12;i++){
+        const a = (i/12)*Math.PI*2 + pop.t*1.4;
+        const d = 14 + ease*82;
+        g.fillStyle = (i % 2) ? col : '#ffffff';
+        g.beginPath();
+        g.arc(pop.x + Math.cos(a)*d, pop.y + Math.sin(a)*d*0.75 - ease*34, 3.6*(1-f) + 0.6, 0, Math.PI*2);
+        g.fill();
+      }
+      g.translate(pop.x, pop.y - ease*116 - (fire ? 26 : 0));
+      const sc = 0.65 + ease*0.6;
+      g.scale(sc, sc);
+      g.font = "700 22px 'Secular One', Rubik, sans-serif";
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.lineJoin = 'round'; g.lineWidth = 6; g.strokeStyle = 'rgba(8,4,16,0.92)';
+      const label = fire ? 'חמישה כדורי אש!' : 'עוד ' + pop.bonus + ' שניות!';
+      g.strokeText(label, 0, 0);
+      g.fillStyle = col; g.fillText(label, 0, 0);
+      g.font = "700 13px 'Rubik', sans-serif";
+      g.strokeText(fire ? '🔥' : '⏱️', 0, -22); g.fillText(fire ? '🔥' : '⏱️', 0, -22);
+      g.restore();
     }
-    g.globalAlpha = fade;
-    for (let i=0;i<12;i++){
-      const a = (i/12)*Math.PI*2 + pop.t*1.4;
-      const d = 14 + ease*82;
-      g.fillStyle = (i % 2) ? col : '#ffffff';
-      g.beginPath();
-      g.arc(pop.x + Math.cos(a)*d, pop.y + Math.sin(a)*d*0.75 - ease*34, 3.6*(1-f) + 0.6, 0, Math.PI*2);
-      g.fill();
-    }
-    g.translate(pop.x, pop.y - ease*116);
-    const sc = 0.65 + ease*0.6;
-    g.scale(sc, sc);
-    g.font = "700 22px 'Secular One', Rubik, sans-serif";
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.lineJoin = 'round'; g.lineWidth = 6; g.strokeStyle = 'rgba(8,4,16,0.92)';
-    const label = 'עוד ' + pop.bonus + ' שניות!';
-    g.strokeText(label, 0, 0);
-    g.fillStyle = col; g.fillText(label, 0, 0);
-    g.font = "700 13px 'Rubik', sans-serif";
-    g.strokeText('⏱️', 0, -22); g.fillText('⏱️', 0, -22);
-    g.restore();
   }
-
   // the arc the ball will actually fly, dotted out while the finger is down, plus a ring on the
   // point being aimed at — nothing is hidden from the player
   function drawAim(){
     if (!S.dragging || !S.dragTo) return;
-    if (Math.hypot(S.dragTo.x - HOME.x, S.dragTo.y - HOME.y) < 14) return;
-    if (S.dragTo.y > HOME.y - 20) return;
+    if (Math.hypot(S.dragTo.x - shotOrigin.x, S.dragTo.y - shotOrigin.y) < 14) return;
+    if (S.dragTo.y > shotOrigin.y - 20) return;
     const t = aimTarget(S.dragTo);
     const sol = solveShot(t.x, t.y);
     const col = inFire() ? '#ffd23f' : '#b6ff2e';
@@ -1026,8 +1167,8 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     g.fillStyle = col;
     for (let i=1;i<=22;i++){
       const tt = sol.t*(i/22);
-      const px = HOME.x + sol.vx*tt;
-      const py = HOME.y + sol.vy*tt + GRAV*tt*tt/2;
+      const px = shotOrigin.x + sol.vx*tt;
+      const py = shotOrigin.y + sol.vy*tt + GRAV*tt*tt/2;
       g.globalAlpha = 0.85 - i*0.024;
       g.beginPath(); g.arc(px, py, 4.2 - i*0.09, 0, Math.PI*2); g.fill();
     }
@@ -1043,7 +1184,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   function drawSpots(){
     g.save();
     for (let i=0;i<SPOTS.length;i++){
-      const here = (SPOTS[i] === HOME.x);
+      const here = (SPOTS[i] === HOME.x) && !S.fireBalls.length;
       g.globalAlpha = here ? 0.85 : 0.22;
       g.strokeStyle = here ? '#b6ff2e' : 'rgba(255,255,255,0.75)';
       g.lineWidth = here ? 3 : 2;
@@ -1059,8 +1200,73 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     g.restore();
   }
 
+  // a compact halo of flame for a single ball
+  function ballFlames(x, y, r, seed){
+    const t = S.tAnim;
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    const halo = g.createRadialGradient(x, y, r*0.3, x, y, r*2.4);
+    halo.addColorStop(0,'rgba(255,140,20,0.26)');
+    halo.addColorStop(1,'rgba(255,60,0,0)');
+    g.fillStyle = halo;
+    g.beginPath(); g.arc(x, y, r*2.4, 0, Math.PI*2); g.fill();
+    for (let i=0;i<8;i++){
+      const a  = -Math.PI/2 + (i/7 - 0.5)*2.4;
+      const px = x + Math.cos(a)*r*0.78, py = y + Math.sin(a)*r*0.78;
+      const ph = t*(3.0 + (i%4)*0.45) + i*1.9 + seed;
+      const h  = r*(0.8 + Math.sin(ph)*0.34);
+      const w  = r*0.32;
+      const tip = px + Math.sin(ph*1.2)*r*0.22;
+      const grd = g.createLinearGradient(px, py, tip, py - h);
+      grd.addColorStop(0,   'rgba(255,60,0,0)');
+      grd.addColorStop(0.24,'rgba(255,110,0,0.6)');
+      grd.addColorStop(0.68,'rgba(255,200,60,0.55)');
+      grd.addColorStop(1,   'rgba(255,250,210,0)');
+      g.fillStyle = grd;
+      g.beginPath();
+      g.moveTo(px - w, py);
+      g.quadraticCurveTo(px - w*0.8, py - h*0.55, tip, py - h);
+      g.quadraticCurveTo(px + w*0.8, py - h*0.55, px + w, py);
+      g.closePath(); g.fill();
+    }
+    g.restore();
+  }
+
+  // the loose flaming balls waiting on the floor, and the flash when one is picked up
+  function drawFireBalls(){
+    for (let i=0;i<S.fireBalls.length;i++){
+      const fb = S.fireBalls[i];
+      g.save(); g.globalAlpha = 0.3; g.fillStyle = '#000';
+      g.beginPath(); g.ellipse(fb.x, FLOOR_Y + 42, FB_R*0.95, FB_R*0.3, 0, 0, Math.PI*2); g.fill();
+      g.restore();
+
+      ballFlames(fb.x, fb.y, FB_R, fb.seed);
+
+      g.save(); g.translate(fb.x, fb.y); g.rotate(fb.spin);
+      const grd = g.createRadialGradient(-FB_R*0.3, -FB_R*0.35, FB_R*0.12, 0, 0, FB_R);
+      grd.addColorStop(0,   '#fff6d0');
+      grd.addColorStop(0.3, '#ffc21f');
+      grd.addColorStop(0.68,'#ff5a0a');
+      grd.addColorStop(1,   '#8f1c00');
+      g.beginPath(); g.arc(0,0,FB_R,0,Math.PI*2); g.fillStyle = grd; g.fill();
+      g.strokeStyle = 'rgba(96,18,0,0.9)'; g.lineWidth = 1.8;
+      g.beginPath(); g.arc(0,0,FB_R,0,Math.PI*2); g.stroke();
+      g.beginPath(); g.moveTo(-FB_R,0); g.lineTo(FB_R,0); g.stroke();
+      g.beginPath(); g.ellipse(0,0,FB_R*0.48,FB_R,0,0,Math.PI*2); g.stroke();
+      g.restore();
+    }
+    for (let i=0;i<S.fbPops.length;i++){
+      const pp = S.fbPops[i], f = pp.t/0.5;
+      g.save(); g.globalAlpha = (1-f)*0.9;
+      g.strokeStyle = '#ffb428'; g.lineWidth = 3*(1-f) + 1;
+      g.beginPath(); g.arc(pp.x, pp.y, 8 + f*34, 0, Math.PI*2); g.stroke();
+      g.restore();
+    }
+  }
+
   function drawBall(){
     const b = S.ball;
+    if (!b && S.fireBalls.length) return;      // the flaming balls on the floor are the ball
     const x = b ? b.x : HOME.x, y = b ? b.y : (HOME.y - S.hopIn*S.hopIn*26);
     const spin = b ? b.spin : 0;
 
@@ -1069,24 +1275,32 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
       for (let i=0;i<S.trail.length;i++){
         const t = S.trail[i], f = i/S.trail.length;
         g.globalAlpha = f*0.3;
-        g.fillStyle = '#ff7a1f';
+        g.fillStyle = b.onFire ? '#ffd23f' : '#ff7a1f';
         g.beginPath(); g.arc(t.x, t.y, BALL_R*0.55*f, 0, Math.PI*2); g.fill();
       }
       g.restore();
     }
 
+    const hot = b ? b.onFire : S.fireBalls.length > 0;
     const sq = Math.max(0.25, 1 - Math.abs(FLOOR_Y - y)/520);
     g.save(); g.globalAlpha = 0.34*sq;
     g.fillStyle = '#000';
     g.beginPath(); g.ellipse(x, FLOOR_Y+26, BALL_R*1.05*sq, BALL_R*0.32*sq, 0, 0, Math.PI*2); g.fill();
     g.restore();
 
+    if (hot) ballFlames(x, y, BALL_R, 1.7);
+
     g.save();
     g.translate(x,y); g.rotate(spin);
     const grd = g.createRadialGradient(-BALL_R*0.35, -BALL_R*0.4, BALL_R*0.15, 0, 0, BALL_R);
-    grd.addColorStop(0,'#ffc184'); grd.addColorStop(0.55,'#ff7a1f'); grd.addColorStop(1,'#b03f08');
+    if (hot){
+      grd.addColorStop(0,'#fff6d0'); grd.addColorStop(0.3,'#ffc21f');
+      grd.addColorStop(0.68,'#ff5a0a'); grd.addColorStop(1,'#8f1c00');
+    } else {
+      grd.addColorStop(0,'#ffc184'); grd.addColorStop(0.55,'#ff7a1f'); grd.addColorStop(1,'#b03f08');
+    }
     g.beginPath(); g.arc(0,0,BALL_R,0,Math.PI*2); g.fillStyle = grd; g.fill();
-    g.strokeStyle = 'rgba(30,12,4,0.85)'; g.lineWidth = 2.2;
+    g.strokeStyle = hot ? 'rgba(96,18,0,0.9)' : 'rgba(30,12,4,0.85)'; g.lineWidth = 2.2;
     g.beginPath(); g.arc(0,0,BALL_R,0,Math.PI*2); g.stroke();
     g.beginPath(); g.moveTo(-BALL_R,0); g.lineTo(BALL_R,0); g.stroke();
     g.beginPath(); g.moveTo(0,-BALL_R); g.lineTo(0,BALL_R); g.stroke();
@@ -1100,6 +1314,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     drawSpots();
     drawHoop();
     drawToken();
+    drawFireBalls();
     drawAim();
     drawBall();
     drawTokenPop();
