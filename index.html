@@ -39,7 +39,12 @@
     border:2px solid rgba(255,255,255,0.14); border-radius:14px; padding:8px 14px;
     box-shadow:0 10px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07);
   }
-  .cell{ display:flex; flex-direction:column; align-items:center; gap:1px; min-width:62px; position:relative; }
+  .cell{ display:flex; flex-direction:column; align-items:center; gap:1px; min-width:54px; position:relative; }
+  #streakNum{ color:var(--lime); text-shadow:2px 2px 0 rgba(0,0,0,.45); transition:transform .12s ease; }
+  #streakNum.cold{ color:var(--muted); text-shadow:none; }
+  #streakNum.hot{ color:var(--ball); text-shadow:2px 2px 0 rgba(255,46,147,.7); animation:streakPulse .8s ease-in-out infinite; }
+  #streakNum.bump{ transform:scale(1.28); }
+  @keyframes streakPulse{ 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.1);} }
   .cell-label{ font-size:10.5px; color:var(--muted); font-weight:500; letter-spacing:.04em; }
   .cell-value{ font-family:'Secular One',Rubik,sans-serif; font-size:24px; color:var(--yellow);
                text-shadow:2px 2px 0 rgba(255,46,147,0.75); font-variant-numeric:tabular-nums; }
@@ -116,6 +121,13 @@
   .hidden{ display:none !important; }
 
   /* short screens — mostly phones held sideways: size the court by height so it clears the control bar */
+  /* a 667px-tall phone cannot fit the full-size stack: the scoreboard was being pushed off the
+     top of the screen. shrink the court to whatever height is actually left over. */
+  @media (max-height:790px){
+    #court{ height:calc(100dvh - 232px); width:auto; aspect-ratio:1/1.33; align-self:center; max-width:100%; }
+    .hint{ font-size:11.5px; padding:6px 10px; }
+    .cell-value{ font-size:21px; }
+  }
   @media (max-height:640px){
     .hint{ display:none; }
     .streak-banner{ min-height:0; font-size:12px; }
@@ -126,6 +138,7 @@
   @media (max-height:430px){
     #court{ height:calc(100dvh - 158px); }
     .cell-label{ display:none; }
+    .cell{ min-width:44px; }
   }
   /* phone in landscape: stand the panel beside the court instead of above it, so the court can
      use the whole height rather than a 174px sliver */
@@ -138,7 +151,8 @@
       grid-template-areas:". court" "score court" "banner court" "power court" ". court";
       align-items:center; justify-content:center;
     }
-    .scoreboard{ grid-area:score; padding:6px 12px; }
+    .scoreboard{ grid-area:score; padding:6px 8px; }
+    .cell{ min-width:46px; }
     .cell-label{ display:block; }
     .cell-value{ font-size:21px; }
     .streak-banner{ grid-area:banner; }
@@ -157,6 +171,9 @@ html[data-arcade-theme="light"] body{ background:#f2ecfb; color:#241636; }
 html[data-arcade-theme="light"] .scoreboard{ background:linear-gradient(180deg,#ffffff,#f4eefc);
   border-color:rgba(40,20,70,.16); box-shadow:0 8px 20px rgba(40,20,70,.14) }
 html[data-arcade-theme="light"] .cell-value{ color:#b3186a; text-shadow:2px 2px 0 rgba(255,210,63,.9) }
+html[data-arcade-theme="light"] #streakNum{ color:#2f8f00; text-shadow:none }
+html[data-arcade-theme="light"] #streakNum.cold{ color:#8a7fa3 }
+html[data-arcade-theme="light"] #streakNum.hot{ color:#d94a00; text-shadow:1.5px 1.5px 0 rgba(255,210,63,.9) }
 html[data-arcade-theme="light"] .streak-banner{ color:#2f8f00; text-shadow:none }
 html[data-arcade-theme="light"] .hint{ background:rgba(40,20,70,.05); border-color:rgba(40,20,70,.1) }
 html[data-arcade-theme="light"] .power-bar{ background:rgba(40,20,70,.08); border-color:rgba(40,20,70,.18) }
@@ -181,6 +198,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   <div class="stage">
     <div class="scoreboard">
       <div class="cell"><div class="cell-label">ניקוד</div><div class="cell-value" id="score">0</div></div>
+      <div class="cell"><div class="cell-label">רצף</div><div class="cell-value" id="streakNum">0</div></div>
       <div class="cell"><div class="cell-label">זמן</div><div class="cell-value" id="timer">45</div></div>
       <div class="cell"><div class="cell-label">שיא</div><div class="cell-value" id="highscore">0</div></div>
     </div>
@@ -285,6 +303,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   const highEl  = document.getElementById('highscore');
   const banner  = document.getElementById('streakBanner');
   const message = document.getElementById('message');
+  const streakEl = document.getElementById('streakNum');
   const powerWrap = document.getElementById('powerWrap');
   const powerFill = document.getElementById('powerFill');
   const powerText = document.getElementById('powerText');
@@ -391,7 +410,24 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     message.style.color = color || 'var(--ink)';
     message.classList.add('show');
   }
+  // the little streak read-out lives on the scoreboard, so it stays visible even while a bonus
+  // banner has taken over the strip below it
+  let shownStreak = -1;
+  function renderStreak(){
+    if (S.streak !== shownStreak){
+      streakEl.textContent = S.streak;
+      if (S.streak > 0){
+        streakEl.classList.add('bump');
+        setTimeout(()=>streakEl.classList.remove('bump'), 140);
+      }
+      shownStreak = S.streak;
+    }
+    streakEl.classList.toggle('cold', S.streak === 0);
+    streakEl.classList.toggle('hot', S.streak >= FIRE_AT);
+  }
+
   function updateBanner(){
+    renderStreak();
     if (inFire()){
       const m = fireMult(), bits = [];
       if (S.fireShots > 0) bits.push('עוד ' + S.fireShots + (S.fireShots === 1 ? ' זריקה' : ' זריקות'));
