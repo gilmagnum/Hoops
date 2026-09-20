@@ -202,7 +202,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
       <div class="power-caption"><span>עוצמת זריקה</span><span id="powerText">0%</span></div>
     </div>
 
-    <div class="hint">🏀 מושכים מהכדור לכיוון הסל — הקו המקווקו מראה בדיוק לאן הכדור יגיע. שלושה ברצף = מצב אש לשלוש זריקות 🔥. בסל מופיעים בונוסים שזוכים בהם בקליעה: שעון לתוספת זמן ⏱️ וכדור אש שמפיל חמישה כדורים בוערים לרצפה — בוחרים כל אחד מהם, וכל סל איתו כפול 🔥</div>
+    <div class="hint">🏀 מושכים מהכדור לכיוון הסל — הקו המקווקו מראה בדיוק לאן הכדור יגיע. שלושה ברצף = מצב אש לשלוש זריקות 🔥. בסל מופיעים בונוסים שזוכים בהם בקליעה: שעון לתוספת זמן ⏱️ וכדור אש שמפיל כדורים בוערים לרצפה — בוחרים כל אחד מהם, וכל סל איתו כפול 🔥</div>
   </div>
 
   <div class="modal-veil" id="overModal">
@@ -253,12 +253,12 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   // a longer streak rains flaming balls onto the floor: each one you pick up doubles again, so a
   // shot taken while both are running is worth four times
   const FIREBALL_AT    = 5;
-  const FIREBALL_COUNT = 5;
+  const FIREBALL_SETS  = [5, 3];   // two chances a game: five balls the first time, three the second
   const FB_R           = 13;
   const FB_GRAV        = 1700;
   // the clock bonus hangs in the net: you win it by sinking the shot, so it never costs a turn
   // the clock is worth less on the second try, so the first look at it is the one to take
-  const TIME_EVERY = 5, TIME_BONUS_1 = 10, TIME_BONUS_2 = 5, TIME_AWARDS_MAX = 3, TOKEN_SHOTS = 2;
+  const TIME_EVERY = 5, TIME_BONUS_1 = 10, TIME_BONUS_2 = 5, TIME_AWARDS_MAX = 4, TOKEN_SHOTS = 2;
   const SHOT_TIMEOUT = 3.0;
   const FIXED_STEP   = 1/300;      // physics runs on its own clock, so 60Hz and 120Hz fly the same arc
 
@@ -273,8 +273,9 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     makes:0, paused:false, over:false, started:false, locked:true, timeUp:false, muted:false,
     hoopX:W/2, hoopDir:1, hopIn:0, acc:0, tAnim:0,
     ball:null, dragging:false, dragTo:null,
-    fireShots:0, fireFresh:false, fireBalls:[], fbPops:[], timeAwards:0, fireToken:null, pops:[],
-    netRipple:0, rimFlash:0, boardFlash:0, token:null, timerHandle:null, trail:[]
+    fireShots:0, fireFresh:false, fireBalls:[], fbPops:[], timeAwards:0, fireAwards:0,
+    netToken:null, pending:[], pops:[],
+    netRipple:0, rimFlash:0, boardFlash:0, timerHandle:null, trail:[]
   };
 
   const cv = document.getElementById('cv');
@@ -343,7 +344,9 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   const inFire    = () => S.fireShots > 0 || S.fireBalls.length > 0;
   const fireMult  = () => (S.fireShots > 0 ? 2 : 1) * (S.fireBalls.length > 0 ? 2 : 1);
   const multWord  = m => m >= 4 ? ' פי ארבע 🔥🔥' : (m === 2 ? ' כפול 🔥' : '');
-  const tokenBonus = () => (S.token && S.token.shots >= TOKEN_SHOTS) ? TIME_BONUS_1 : TIME_BONUS_2;
+  const tokenBonus = () => (S.netToken && S.netToken.shots >= TOKEN_SHOTS) ? TIME_BONUS_1 : TIME_BONUS_2;
+  const nextFireBalls = () => FIREBALL_SETS[Math.min(S.fireAwards, FIREBALL_SETS.length - 1)];
+  const COUNT_WORD = { 3:'שלושה', 4:'ארבעה', 5:'חמישה' };
   const SWISH_CALLS = ['סוויש! 🎯', 'רק רשת! 🥅', 'נטו! ✨'];
   const NEAR_CALLS  = ['כמעט! 😤', 'קרוב מאוד', 'על השפה 😬', 'כמעט נכנס'];
   const pick = a => a[Math.floor(Math.random()*a.length)];
@@ -444,8 +447,9 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
       score:0, timeLeft:ROUND_SECONDS, streak:0, makes:0,
       over:false, started:false, locked:true, timeUp:false,
       hoopX:W/2, hoopDir:1, hopIn:0, acc:0, ball:null, dragging:false, dragTo:null,
-      fireShots:0, fireFresh:false, fireBalls:[], fbPops:[], timeAwards:0, fireToken:null, pops:[],
-      netRipple:0, rimFlash:0, boardFlash:0, token:null, trail:[]
+      fireShots:0, fireFresh:false, fireBalls:[], fbPops:[], timeAwards:0, fireAwards:0,
+      netToken:null, pending:[], pops:[],
+      netRipple:0, rimFlash:0, boardFlash:0, trail:[]
     });
     spotIdx = 2; HOME.x = SPOTS[2]; nextSpot();
     scoreEl.textContent = 0; renderTimer(); updateBanner();
@@ -461,7 +465,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   function endRound(){
     S.over = true;
     if (S.timerHandle) clearInterval(S.timerHandle);
-    S.token = null; S.fireToken = null; S.ball = null;
+    S.netToken = null; S.pending = []; S.ball = null;
     finalScoreEl.textContent = S.score;
     finalStreakEl.textContent = S.bestStreak;
     overModal.classList.add('show');
@@ -570,8 +574,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
         if (Math.abs(b.x - S.hoopX) < RIM_HALF - 5){
           b.scored = true;
           S.netRipple = 1;
-          if (S.token) collectToken();
-          if (S.fireToken) collectFireToken();
+          if (S.netToken) collectToken();
           scoreBasket(!b.touchedIron && !b.touchedGlass, b.mult || 1);
         }
       }
@@ -591,13 +594,9 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
         if (S.fireFresh) S.fireFresh = false;
         else { S.fireShots -= 1; updateBanner(); }
       }
-      if (S.token){
-        if (S.token.fresh) S.token.fresh = false;
-        else if (--S.token.shots <= 0) S.token = null;
-      }
-      if (S.fireToken){
-        if (S.fireToken.fresh) S.fireToken.fresh = false;
-        else if (--S.fireToken.shots <= 0) S.fireToken = null;
+      if (S.netToken){
+        if (S.netToken.fresh) S.netToken.fresh = false;
+        else if (--S.netToken.shots <= 0) freeNet();
       }
       S.ball = null;
       if (S.fireBalls.length === 0) nextSpot(); else resetOrigin();
@@ -621,10 +620,10 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
       S.fireShots = FIRE_SHOTS; S.fireFresh = true;
       sfx.fire(); vibrate([12,40,12,40]);
     }
-    if (rain){
-      spawnFireToken();
-      sfx.fire(); vibrate([12,40,12,40,12]);
-      showMessage('🔥 בונוס אש בסל — קלעו כדי לזכות בחמישה כדורי אש', 'var(--ball-2)');
+    const gotFire = rain && requestToken('fire');
+    if (gotFire){
+      vibrate([12,40,12,40,12]);
+      showMessage('🔥 בונוס אש בסל — קלעו כדי לזכות ב' + (COUNT_WORD[nextFireBalls()] || nextFireBalls()) + ' כדורי אש', 'var(--ball-2)');
     } else if (lit){
       showMessage('🔥 ' + (again ? 'עוד ' : 'מצב אש — ') + FIRE_SHOTS + ' זריקות ניקוד כפול!', 'var(--lime)');
     } else {
@@ -633,7 +632,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
       swish ? sfx.swish() : sfx.make();
       vibrate(swish ? [10,30,10] : 14);
     }
-    if (S.makes % TIME_EVERY === 0) spawnToken();
+    if (S.makes % TIME_EVERY === 0) requestToken('clock');
     if (S.score > S.high){
       S.high = S.score; highEl.textContent = S.high;
       try{ localStorage.setItem('hoops_highscore', S.high); }catch(e){}
@@ -656,23 +655,15 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   }
 
   // five flaming balls tumble onto the floor; each one you shoot doubles the basket again
-  function dropFireBalls(){
-    for (let i=0;i<FIREBALL_COUNT;i++){
+  function dropFireBalls(n){
+    for (let i=0;i<n;i++){
       S.fireBalls.push({
-        x: 56 + (W - 112) * (i / (FIREBALL_COUNT - 1)),
+        x: 56 + (W - 112) * (n === 1 ? 0.5 : i / (n - 1)),
         y: -26 - i*32, vy: 0, bounces: 0, rest: false, spin: 0, seed: Math.random()*7
       });
     }
     if (S.fireBalls.length > 12) S.fireBalls.splice(0, S.fireBalls.length - 12);
   }
-  function spawnFireToken(){ S.fireToken = { shots: TOKEN_SHOTS, fresh: true }; }
-  function collectFireToken(){
-    S.fireToken = null;
-    dropFireBalls();
-    S.pops.push({ t:0, kind:'fire', x:S.hoopX, y:RIM_Y + 30 });
-    sfx.fire(); vibrate([14,40,14,40,24]);
-  }
-
   // the ball you throw is the one you grabbed; without a grab (a scripted shot) take the nearest
   function takeFireBall(){
     if (!S.fireBalls.length) return false;
@@ -688,19 +679,50 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     return true;
   }
 
-  function spawnToken(){
-    if (S.timeAwards >= TIME_AWARDS_MAX) return;
-    S.token = { shots: TOKEN_SHOTS, fresh: true };
-    sfx.clock();
+  // only ONE bonus ever hangs in the net. a second one that comes due waits its turn instead of
+  // sharing the rim, and the fire bonus jumps the queue because it is the rarer of the two.
+  const capLeft = kind => kind === 'fire' ? S.fireAwards < FIREBALL_SETS.length
+                                          : S.timeAwards < TIME_AWARDS_MAX;
+  function requestToken(kind){
+    if (!capLeft(kind)) return false;
+    if (S.netToken){
+      if (S.netToken.kind !== kind && S.pending.indexOf(kind) < 0) S.pending.push(kind);
+      return false;
+    }
+    if (S.pending.indexOf(kind) >= 0) S.pending.splice(S.pending.indexOf(kind), 1);
+    S.netToken = { kind: kind, shots: TOKEN_SHOTS, fresh: true };
+    kind === 'fire' ? sfx.fire() : sfx.clock();
+    return true;
+  }
+  function freeNet(){
+    S.netToken = null;
+    while (S.pending.length){
+      S.pending.sort((a,b) => (a === 'fire' ? 0 : 1) - (b === 'fire' ? 0 : 1));
+      const next = S.pending.shift();
+      if (capLeft(next)){
+        S.netToken = { kind: next, shots: TOKEN_SHOTS, fresh: true };
+        break;
+      }
+    }
   }
   function collectToken(){
-    const bonus = tokenBonus();      // read it before the token is cleared
-    S.token = null;
-    S.timeAwards += 1;
-    S.timeLeft = Math.min(99, S.timeLeft + bonus);
-    renderTimer(); flashTime(bonus);
-    S.pops.push({ t:0, kind:'clock', bonus:bonus, x:S.hoopX, y:RIM_Y + 30 });
-    sfx.timeWin(); vibrate([14,40,14,40,24]);
+    const kind = S.netToken.kind;
+    if (kind === 'fire'){
+      const n = nextFireBalls();
+      S.fireAwards += 1;
+      freeNet();
+      dropFireBalls(n);
+      S.pops.push({ t:0, kind:'fire', count:n, x:S.hoopX, y:RIM_Y + 30 });
+      sfx.fire(); vibrate([14,40,14,40,24]);
+    } else {
+      const bonus = tokenBonus();    // read it before the token is cleared
+      S.timeAwards += 1;
+      freeNet();
+      S.timeLeft = Math.min(99, S.timeLeft + bonus);
+      renderTimer(); flashTime(bonus);
+      S.pops.push({ t:0, kind:'clock', bonus:bonus, x:S.hoopX, y:RIM_Y + 30 });
+      sfx.timeWin(); vibrate([14,40,14,40,24]);
+    }
   }
 
   // ---------- input: drag from the ball, the same idiom as the penalty game ----------
@@ -1046,70 +1068,55 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   }
 
   // the clock bonus hangs inside the net and travels with the rim — sink the shot and it is yours
-  // both badges hang inside the net; when they are up together they sit side by side
-  function netBadges(){
-    const list = [];
-    if (S.token)     list.push('clock');
-    if (S.fireToken) list.push('fire');
-    return list.map((kind, i) => ({
-      kind,
-      x: S.hoopX + (list.length === 2 ? (i === 0 ? -25 : 25) : 0),
-      y: RIM_Y + 30
-    }));
-  }
-
+  // exactly one badge ever hangs in the net
   function drawToken(){
-    const badges = netBadges();
-    for (let bi=0; bi<badges.length; bi++){
-      const bdg  = badges[bi];
-      const tok  = bdg.kind === 'fire' ? S.fireToken : S.token;
-      const last = tok.shots <= 1 && !tok.fresh;
-      const pulse = 1 + Math.sin(S.tAnim*(last ? 9 : 5.2))*(last ? 0.11 : 0.07);
-      const tint = bdg.kind === 'fire' ? (last ? '255,120,20' : '255,170,40')
-                                       : (last ? '255,180,40' : '34,224,255');
-      const x = bdg.x, y = bdg.y, r = badges.length === 2 ? 19 : 22;
-      g.save();
+    const tok = S.netToken; if (!tok) return;
+    const fire = tok.kind === 'fire';
+    const last = tok.shots <= 1 && !tok.fresh;
+    const pulse = 1 + Math.sin(S.tAnim*(last ? 9 : 5.2))*(last ? 0.11 : 0.07);
+    const tint = fire ? (last ? '255,120,20' : '255,170,40')
+                      : (last ? '255,180,40' : '34,224,255');
+    const x = S.hoopX, y = RIM_Y + 30, r = 22;
+    g.save();
 
-      const glow = g.createRadialGradient(x, y, 3, x, y, 44);
-      glow.addColorStop(0,'rgba(' + tint + ',0.40)');
-      glow.addColorStop(1,'rgba(' + tint + ',0)');
-      g.fillStyle = glow;
-      g.beginPath(); g.arc(x, y, 44, 0, Math.PI*2); g.fill();
+    const glow = g.createRadialGradient(x, y, 3, x, y, 44);
+    glow.addColorStop(0,'rgba(' + tint + ',0.40)');
+    glow.addColorStop(1,'rgba(' + tint + ',0)');
+    g.fillStyle = glow;
+    g.beginPath(); g.arc(x, y, 44, 0, Math.PI*2); g.fill();
 
-      g.translate(x, y); g.scale(pulse, pulse);
+    g.translate(x, y); g.scale(pulse, pulse);
 
-      if (bdg.kind === 'fire'){
-        g.fillStyle = last ? '#ff7a1f' : '#ffaa28';
-        g.strokeStyle = '#3a1000'; g.lineWidth = 3;
-        g.beginPath(); g.arc(0, 0, r, 0, Math.PI*2); g.fill(); g.stroke();
-        // a little basketball with a flame over it
-        g.strokeStyle = '#3a1000'; g.lineWidth = 1.8;
-        g.beginPath(); g.arc(0, -4, 7.5, 0, Math.PI*2); g.stroke();
-        g.beginPath(); g.moveTo(-7.5,-4); g.lineTo(7.5,-4); g.stroke();
-        g.beginPath(); g.ellipse(0,-4,3.6,7.5,0,0,Math.PI*2); g.stroke();
-        g.fillStyle = '#3a1000';
-        g.font = "700 12px 'Secular One', Rubik, sans-serif";
-        g.textAlign = 'center'; g.textBaseline = 'middle';
-        if ('direction' in g) g.direction = 'ltr';
-        g.fillText('×' + FIREBALL_COUNT, 0, r - 7);
-      } else {
-        g.fillStyle = last ? '#ffb428' : '#22e0ff';
-        g.strokeStyle = '#06222e'; g.lineWidth = 3;
-        g.beginPath(); g.arc(0, 0, r, 0, Math.PI*2); g.fill(); g.stroke();
-        g.strokeStyle = '#06222e'; g.lineWidth = 2;
-        g.beginPath(); g.arc(0, -7, 6.5, 0, Math.PI*2); g.stroke();
-        g.beginPath(); g.moveTo(0,-10.5); g.lineTo(0,-7.5); g.stroke();
-        g.lineWidth = 1.8; g.lineCap = 'round';
-        g.beginPath(); g.moveTo(0,-7); g.lineTo(0,-11); g.stroke();
-        g.beginPath(); g.moveTo(0,-7); g.lineTo(3.4,-5.6); g.stroke();
-        g.fillStyle = '#06222e';
-        g.font = "700 12px 'Secular One', Rubik, sans-serif";
-        g.textAlign = 'center'; g.textBaseline = 'middle';
-        if ('direction' in g) g.direction = 'ltr';
-        g.fillText('+' + tokenBonus(), 0, r - 7);
-      }
-      g.restore();
+    if (fire){
+      g.fillStyle = last ? '#ff7a1f' : '#ffaa28';
+      g.strokeStyle = '#3a1000'; g.lineWidth = 3;
+      g.beginPath(); g.arc(0, 0, r, 0, Math.PI*2); g.fill(); g.stroke();
+      g.strokeStyle = '#3a1000'; g.lineWidth = 1.8;
+      g.beginPath(); g.arc(0, -4, 7.5, 0, Math.PI*2); g.stroke();
+      g.beginPath(); g.moveTo(-7.5,-4); g.lineTo(7.5,-4); g.stroke();
+      g.beginPath(); g.ellipse(0,-4,3.6,7.5,0,0,Math.PI*2); g.stroke();
+      g.fillStyle = '#3a1000';
+      g.font = "700 12px 'Secular One', Rubik, sans-serif";
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      if ('direction' in g) g.direction = 'ltr';
+      g.fillText('×' + nextFireBalls(), 0, r - 7);
+    } else {
+      g.fillStyle = last ? '#ffb428' : '#22e0ff';
+      g.strokeStyle = '#06222e'; g.lineWidth = 3;
+      g.beginPath(); g.arc(0, 0, r, 0, Math.PI*2); g.fill(); g.stroke();
+      g.strokeStyle = '#06222e'; g.lineWidth = 2;
+      g.beginPath(); g.arc(0, -7, 6.5, 0, Math.PI*2); g.stroke();
+      g.beginPath(); g.moveTo(0,-10.5); g.lineTo(0,-7.5); g.stroke();
+      g.lineWidth = 1.8; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(0,-7); g.lineTo(0,-11); g.stroke();
+      g.beginPath(); g.moveTo(0,-7); g.lineTo(3.4,-5.6); g.stroke();
+      g.fillStyle = '#06222e';
+      g.font = "700 12px 'Secular One', Rubik, sans-serif";
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      if ('direction' in g) g.direction = 'ltr';
+      g.fillText('+' + tokenBonus(), 0, r - 7);
     }
+    g.restore();
   }
 
   function drawTokenPop(){
@@ -1145,7 +1152,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
       g.font = "700 22px 'Secular One', Rubik, sans-serif";
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.lineJoin = 'round'; g.lineWidth = 6; g.strokeStyle = 'rgba(8,4,16,0.92)';
-      const label = fire ? 'חמישה כדורי אש!' : 'עוד ' + pop.bonus + ' שניות!';
+      const label = fire ? (COUNT_WORD[pop.count] || pop.count) + ' כדורי אש!' : 'עוד ' + pop.bonus + ' שניות!';
       g.strokeText(label, 0, 0);
       g.fillStyle = col; g.fillText(label, 0, 0);
       g.font = "700 13px 'Rubik', sans-serif";
