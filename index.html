@@ -290,10 +290,10 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     score:0, timeLeft:ROUND_SECONDS, streak:0, bestStreak:storedBest, high:storedHigh,
     makes:0, paused:false, over:false, started:false, locked:true, timeUp:false, muted:false,
     hoopX:W/2, hoopDir:1, hopIn:0, acc:0, tAnim:0,
-    ball:null, dragging:false, dragTo:null,
+    balls:[], dragging:false, dragTo:null,
     fireShots:0, fireFresh:false, fireBalls:[], fbPops:[], timeAwards:0, fireAwards:0,
     netToken:null, pending:[], pops:[],
-    netRipple:0, rimFlash:0, boardFlash:0, timerHandle:null, trail:[]
+    netRipple:0, rimFlash:0, boardFlash:0, timerHandle:null
   };
 
   const cv = document.getElementById('cv');
@@ -449,7 +449,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
       if (S.timeLeft <= 5 && S.timeLeft > 0) sfx.tick();
       if (S.timeLeft <= 0){ S.timeLeft = 0; clearInterval(S.timerHandle); S.timeUp = true; }
       renderTimer();
-      if (S.timeUp && !S.ball && !S.over) endRound();
+      if (S.timeUp && !S.balls.length && !S.over) endRound();
     }, 1000);
   }
 
@@ -482,10 +482,10 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     Object.assign(S,{
       score:0, timeLeft:ROUND_SECONDS, streak:0, makes:0,
       over:false, started:false, locked:true, timeUp:false,
-      hoopX:W/2, hoopDir:1, hopIn:0, acc:0, ball:null, dragging:false, dragTo:null,
+      hoopX:W/2, hoopDir:1, hopIn:0, acc:0, balls:[], dragging:false, dragTo:null,
       fireShots:0, fireFresh:false, fireBalls:[], fbPops:[], timeAwards:0, fireAwards:0,
       netToken:null, pending:[], pops:[],
-      netRipple:0, rimFlash:0, boardFlash:0, trail:[]
+      netRipple:0, rimFlash:0, boardFlash:0
     });
     spotIdx = 2; HOME.x = SPOTS[2]; nextSpot();
     scoreEl.textContent = 0; renderTimer(); updateBanner();
@@ -501,7 +501,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   function endRound(){
     S.over = true;
     if (S.timerHandle) clearInterval(S.timerHandle);
-    S.netToken = null; S.pending = []; S.ball = null;
+    S.netToken = null; S.pending = []; S.balls = [];
     finalScoreEl.textContent = S.score;
     finalStreakEl.textContent = S.bestStreak;
     overModal.classList.add('show');
@@ -546,95 +546,110 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     const ox = shotOrigin.x, oy = shotOrigin.y;
     const onFire = takeFireBall();                       // a miss burns it too
     const mult = (S.fireShots > 0 ? 2 : 1) * (onFire ? 2 : 1);
-    S.ball = { x:ox, y:oy, vx:sol.vx, vy:sol.vy, t:0, spin:0, apexed:false, onFire, mult,
-               touchedIron:false, touchedGlass:false, scored:false, done:false };
-    S.trail = [];
+    S.balls.push({ x:ox, y:oy, vx:sol.vx, vy:sol.vy, t:0, spin:0, apexed:false, onFire, mult,
+                   touchedIron:false, touchedGlass:false, scored:false, done:false, trail:[] });
     updateBanner();
     startTimer();
     sfx.release(); vibrate(10);
   }
 
-  function stepBall(dt){
-    const b = S.ball; if (!b) return;
+  // several shots can be in the air at once while the flaming balls are out, so every ball keeps
+  // its own state and they all advance on the same fixed clock
+  function stepOne(b, h){
+    const prevY = b.y;
+    b.vy += GRAV*h;
+    b.x  += b.vx*h;
+    b.y  += b.vy*h;
+    b.spin += b.vx*h*0.012;
+    b.t  += h;
+    if (b.vy >= 0) b.apexed = true;
+
+    // side walls of the alley
+    if (b.x < BALL_R){ b.x = BALL_R; b.vx = Math.abs(b.vx)*0.55; }
+    if (b.x > W-BALL_R){ b.x = W-BALL_R; b.vx = -Math.abs(b.vx)*0.55; }
+
+    // the glass. on the way up the ball passes in front of the board, so it is only live for a
+    // falling ball: clip the square with a shot that is a touch wide and it is steered back onto
+    // the rim — the classic bank, worth two rather than a swish's three.
+    const bb = boardBottom();
+    if (b.apexed && b.vy > 0 && !b.touchedGlass && prevY <= bb && b.y > bb){
+      const off = Math.abs(b.x - S.hoopX);
+      if (off > RIM_HALF - 8 && off < BOARD_W/2 + 4){
+        b.touchedGlass = true; S.boardFlash = 1; sfx.glass();
+        const tt = Math.max(0.02, (RIM_Y - bb) / Math.max(120, b.vy));
+        const steer = (S.hoopX - b.x) / tt * 0.62;
+        b.vx = Math.max(-900, Math.min(900, steer));
+        b.vy *= 0.94;
+      }
+    }
+
+    // the two bits of iron at the ends of the rim
+    for (let k=0;k<2 && b.apexed;k++){
+      const side = k ? 1 : -1;
+      const rx = S.hoopX + side*RIM_HALF, ry = RIM_Y;
+      const ddx = b.x - rx, ddy = b.y - ry;
+      const d = Math.hypot(ddx, ddy);
+      if (d < BALL_R + RIM_NUB && d > 0.01){
+        const nx = ddx/d, ny = ddy/d;
+        const push = (BALL_R + RIM_NUB) - d;
+        b.x += nx*push; b.y += ny*push;
+        const dot = b.vx*nx + b.vy*ny;
+        b.vx = (b.vx - 2*dot*nx)*0.62;
+        b.vy = (b.vy - 2*dot*ny)*0.62;
+        if (!b.touchedIron){ b.touchedIron = true; S.rimFlash = 1; sfx.iron(); vibrate(8); }
+      }
+    }
+
+    // through the hoop, on the way down
+    if (!b.scored && b.vy > 0 && prevY - BALL_R <= RIM_Y && b.y - BALL_R > RIM_Y){
+      if (Math.abs(b.x - S.hoopX) < RIM_HALF - 5){
+        b.scored = true;
+        S.netRipple = 1;
+        if (S.netToken) collectToken();
+        scoreBasket(!b.touchedIron && !b.touchedGlass, b.mult || 1);
+      }
+    }
+
+    // once a miss is clearly past the rim there is nothing left to watch — keep the pace up
+    if (b.vy > 0 && b.y > RIM_Y + 170) b.done = true;
+    if (b.y > H + 60 || b.t > SHOT_TIMEOUT) b.done = true;
+  }
+
+  // every resolved shot spends one fire shot and one attempt at whatever hangs in the net
+  function afterShot(){
+    if (S.fireShots > 0){
+      if (S.fireFresh) S.fireFresh = false;
+      else { S.fireShots -= 1; updateBanner(); }
+    }
+    if (S.netToken){
+      if (S.netToken.fresh) S.netToken.fresh = false;
+      else if (--S.netToken.shots <= 0) freeNet();
+    }
+  }
+
+  function stepBalls(dt){
+    if (!S.balls.length){ S.acc = 0; return; }
     S.acc += dt;
     let guard = 0;
     const h = FIXED_STEP;
-    while (S.acc >= h && !b.done && guard++ < 120){
+    while (S.acc >= h && guard++ < 120){
       S.acc -= h;
-      const prevY = b.y;
-      b.vy += GRAV*h;
-      b.x  += b.vx*h;
-      b.y  += b.vy*h;
-      b.spin += b.vx*h*0.012;
-      b.t  += h;
-      if (b.vy >= 0) b.apexed = true;
-
-      // side walls of the alley
-      if (b.x < BALL_R){ b.x = BALL_R; b.vx = Math.abs(b.vx)*0.55; }
-      if (b.x > W-BALL_R){ b.x = W-BALL_R; b.vx = -Math.abs(b.vx)*0.55; }
-
-      // the glass. on the way up the ball passes in front of the board, so it is only live for a
-      // falling ball: clip the square with a shot that is a touch wide and it is steered back onto
-      // the rim — the classic bank, worth two rather than a swish's three.
-      const bb = boardBottom();
-      if (b.apexed && b.vy > 0 && !b.touchedGlass && prevY <= bb && b.y > bb){
-        const off = Math.abs(b.x - S.hoopX);
-        if (off > RIM_HALF - 8 && off < BOARD_W/2 + 4){
-          b.touchedGlass = true; S.boardFlash = 1; sfx.glass();
-          const tt = Math.max(0.02, (RIM_Y - bb) / Math.max(120, b.vy));
-          const steer = (S.hoopX - b.x) / tt * 0.62;
-          b.vx = Math.max(-900, Math.min(900, steer));
-          b.vy *= 0.94;
-        }
+      for (let i=0;i<S.balls.length;i++){
+        const b = S.balls[i];
+        if (!b.done) stepOne(b, h);
       }
-
-      // the two bits of iron at the ends of the rim
-      for (let k=0;k<2 && b.apexed;k++){
-        const side = k ? 1 : -1;
-        const rx = S.hoopX + side*RIM_HALF, ry = RIM_Y;
-        const ddx = b.x - rx, ddy = b.y - ry;
-        const d = Math.hypot(ddx, ddy);
-        if (d < BALL_R + RIM_NUB && d > 0.01){
-          const nx = ddx/d, ny = ddy/d;
-          const push = (BALL_R + RIM_NUB) - d;
-          b.x += nx*push; b.y += ny*push;
-          const dot = b.vx*nx + b.vy*ny;
-          b.vx = (b.vx - 2*dot*nx)*0.62;
-          b.vy = (b.vy - 2*dot*ny)*0.62;
-          if (!b.touchedIron){ b.touchedIron = true; S.rimFlash = 1; sfx.iron(); vibrate(8); }
-        }
-      }
-
-      // through the hoop, on the way down
-      if (!b.scored && b.vy > 0 && prevY - BALL_R <= RIM_Y && b.y - BALL_R > RIM_Y){
-        if (Math.abs(b.x - S.hoopX) < RIM_HALF - 5){
-          b.scored = true;
-          S.netRipple = 1;
-          if (S.netToken) collectToken();
-          scoreBasket(!b.touchedIron && !b.touchedGlass, b.mult || 1);
-        }
-      }
-
-      // once a miss is clearly past the rim there is nothing left to watch — keep the pace up
-      if (b.vy > 0 && b.y > RIM_Y + 170) b.done = true;
-      if (b.y > H + 60 || b.t > SHOT_TIMEOUT) b.done = true;
     }
-
-    S.trail.push({ x:b.x, y:b.y });
-    if (S.trail.length > 14) S.trail.shift();
-
-    if (b.done){
-      if (!b.scored) missedShot(b);
-      // both the fire and the clock are measured in shots; the shot they appeared on does not count
-      if (S.fireShots > 0){
-        if (S.fireFresh) S.fireFresh = false;
-        else { S.fireShots -= 1; updateBanner(); }
+    for (let i=S.balls.length-1;i>=0;i--){
+      const b = S.balls[i];
+      b.trail.push({ x:b.x, y:b.y });
+      if (b.trail.length > 14) b.trail.shift();
+      if (b.done){
+        if (!b.scored) missedShot(b);
+        afterShot();
+        S.balls.splice(i, 1);
       }
-      if (S.netToken){
-        if (S.netToken.fresh) S.netToken.fresh = false;
-        else if (--S.netToken.shots <= 0) freeNet();
-      }
-      S.ball = null;
+    }
+    if (!S.balls.length){
       if (S.fireBalls.length === 0) nextSpot(); else resetOrigin();
       if (S.timeUp && !S.over) endRound();
     }
@@ -783,7 +798,9 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
 
   function onDown(e){
     if (!actx) ctx();
-    if (S.locked || S.paused || S.over || S.timeUp || S.ball) return;
+    if (S.locked || S.paused || S.over || S.timeUp) return;
+    // with flaming balls on the floor you may throw again without waiting for the last shot
+    if (!S.fireBalls.length && S.balls.length) return;
     const p = courtPoint(e);
     const grab = grabAt(p);
     if (!grab) return;
@@ -841,7 +858,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
       if (S.hoopX > HOOP_MAX_X){ S.hoopX = HOOP_MAX_X; S.hoopDir = -1; }
     }
 
-    if (S.ball) stepBall(dt);
+    stepBalls(dt);
     for (let i=0;i<S.fireBalls.length;i++){
       const fb = S.fireBalls[i];
       if (fb.rest){ fb.spin *= 0.93; continue; }
@@ -1227,7 +1244,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   function drawSpots(){
     g.save();
     for (let i=0;i<SPOTS.length;i++){
-      const here = (SPOTS[i] === HOME.x) && !S.fireBalls.length;
+      const here = (SPOTS[i] === HOME.x) && !S.fireBalls.length && !S.balls.length;
       g.globalAlpha = here ? 0.85 : 0.22;
       g.strokeStyle = here ? '#b6ff2e' : 'rgba(255,255,255,0.75)';
       g.lineWidth = here ? 3 : 2;
@@ -1307,16 +1324,20 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     }
   }
 
-  function drawBall(){
-    const b = S.ball;
-    if (!b && S.fireBalls.length) return;      // the flaming balls on the floor are the ball
+  function drawBalls(){
+    for (let i=0;i<S.balls.length;i++) drawOneBall(S.balls[i]);
+    // the plain ball waiting on the chalk spot — only when nothing else is going on
+    if (!S.balls.length && !S.fireBalls.length) drawOneBall(null);
+  }
+
+  function drawOneBall(b){
     const x = b ? b.x : HOME.x, y = b ? b.y : (HOME.y - S.hopIn*S.hopIn*26);
     const spin = b ? b.spin : 0;
 
     if (b){
       g.save();
-      for (let i=0;i<S.trail.length;i++){
-        const t = S.trail[i], f = i/S.trail.length;
+      for (let i=0;i<b.trail.length;i++){
+        const t = b.trail[i], f = i/b.trail.length;
         g.globalAlpha = f*0.3;
         g.fillStyle = b.onFire ? '#ffd23f' : '#ff7a1f';
         g.beginPath(); g.arc(t.x, t.y, BALL_R*0.55*f, 0, Math.PI*2); g.fill();
@@ -1359,7 +1380,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     drawToken();
     drawFireBalls();
     drawAim();
-    drawBall();
+    drawBalls();
     drawTokenPop();
   }
 
