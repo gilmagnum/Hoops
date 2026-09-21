@@ -440,6 +440,19 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   }
 
   // ---------- round flow ----------
+  // time won after the buzzer has already gone (the ball was still in the air) has to restart
+  // the clock, otherwise the round ends the moment that ball lands, with seconds still showing
+  function addTime(sec){
+    S.timeLeft = Math.min(99, S.timeLeft + sec);
+    if (S.timeUp && !S.over && S.timeLeft > 0){
+      S.timeUp = false;
+      if (S.timerHandle) clearInterval(S.timerHandle);
+      S.started = false;
+      startTimer();
+    }
+    renderTimer();
+  }
+
   function startTimer(){
     if (S.started || S.over) return;
     S.started = true;
@@ -517,7 +530,11 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   // while flaming balls are lying on the floor they ARE the ball — you pick whichever one you
   // like and the shot leaves from where it sits, so the origin is not always the chalk spot
   const shotOrigin = { x: HOME.x, y: HOME.y, idx: -1 };
-  function resetOrigin(){ shotOrigin.x = HOME.x; shotOrigin.y = HOME.y; shotOrigin.idx = -1; }
+  function resetOrigin(){
+    // another ball landing while you are still holding one must not swap it out of your hand
+    if (S.dragging) return;
+    shotOrigin.x = HOME.x; shotOrigin.y = HOME.y; shotOrigin.idx = -1;
+  }
 
   // where the finger is pointing: the drag, doubled, clamped to the court. the drag is measured
   // from where the finger went down — for the plain ball that is the ball itself, but a flaming
@@ -724,7 +741,8 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   function takeFireBall(){
     if (!S.fireBalls.length) return false;
     let idx = shotOrigin.idx;
-    if (idx < 0 || idx >= S.fireBalls.length){
+    const held = S.fireBalls[idx];
+    if (!held || Math.abs(held.x - shotOrigin.x) > 1){
       idx = 0;
       for (let i=1;i<S.fireBalls.length;i++){
         if (Math.abs(S.fireBalls[i].x - shotOrigin.x) < Math.abs(S.fireBalls[idx].x - shotOrigin.x)) idx = i;
@@ -774,8 +792,8 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
       const bonus = tokenBonus();    // read it before the token is cleared
       S.timeAwards += 1;
       freeNet();
-      S.timeLeft = Math.min(99, S.timeLeft + bonus);
-      renderTimer(); flashTime(bonus);
+      addTime(bonus);
+      flashTime(bonus);
       S.pops.push({ t:0, kind:'clock', bonus:bonus, x:S.hoopX, y:RIM_Y + 30 });
       sfx.timeWin(); vibrate([14,40,14,40,24]);
     }
