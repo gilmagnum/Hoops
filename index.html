@@ -290,7 +290,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     score:0, timeLeft:ROUND_SECONDS, streak:0, bestStreak:storedBest, high:storedHigh,
     makes:0, paused:false, over:false, started:false, locked:true, timeUp:false, muted:false,
     hoopX:W/2, hoopDir:1, hopIn:0, acc:0, tAnim:0,
-    balls:[], dragging:false, dragTo:null,
+    balls:[], dragging:false, dragTo:null, dragFrom:null,
     fireShots:0, fireFresh:false, fireBalls:[], fbPops:[], timeAwards:0, fireAwards:0,
     netToken:null, pending:[], pops:[],
     netRipple:0, rimFlash:0, boardFlash:0, timerHandle:null
@@ -482,7 +482,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     Object.assign(S,{
       score:0, timeLeft:ROUND_SECONDS, streak:0, makes:0,
       over:false, started:false, locked:true, timeUp:false,
-      hoopX:W/2, hoopDir:1, hopIn:0, acc:0, balls:[], dragging:false, dragTo:null,
+      hoopX:W/2, hoopDir:1, hopIn:0, acc:0, balls:[], dragging:false, dragTo:null, dragFrom:null,
       fireShots:0, fireFresh:false, fireBalls:[], fbPops:[], timeAwards:0, fireAwards:0,
       netToken:null, pending:[], pops:[],
       netRipple:0, rimFlash:0, boardFlash:0
@@ -519,12 +519,17 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   const shotOrigin = { x: HOME.x, y: HOME.y, idx: -1 };
   function resetOrigin(){ shotOrigin.x = HOME.x; shotOrigin.y = HOME.y; shotOrigin.idx = -1; }
 
-  // where the finger is pointing: the drag, doubled, clamped to the court
+  // where the finger is pointing: the drag, doubled, clamped to the court. the drag is measured
+  // from where the finger went down — for the plain ball that is the ball itself, but a flaming
+  // ball can be picked up from anywhere along the floor, so its swipe starts wherever you touched.
+  // the target is projected from the FINGER, not from the ball: swipe at the hoop from anywhere
+  // along the floor and whichever flaming ball gets picked up flies to that same point
+  function dragStart(){ return S.dragFrom || shotOrigin; }
   function aimTarget(to){
-    const o = shotOrigin;
+    const o = shotOrigin, f = dragStart();
     return {
-      x: Math.max(10, Math.min(W-10, o.x + (to.x - o.x)*AIM_GAIN)),
-      y: Math.max(AIM_Y_MIN, Math.min(o.y - 50, o.y + (to.y - o.y)*AIM_GAIN))
+      x: Math.max(10, Math.min(W-10, f.x + (to.x - f.x)*AIM_GAIN)),
+      y: Math.max(AIM_Y_MIN, Math.min(o.y - 50, f.y + (to.y - f.y)*AIM_GAIN))
     };
   }
   // the one arc that drops through that point: apex a fixed height above it, so the ball always
@@ -784,12 +789,16 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   // which ball the finger came down on — any of the flaming ones, or the plain one at the spot
   function grabAt(p){
     if (S.fireBalls.length){
+      // the balls are spread along the floor and each one you throw leaves a gap, so a swipe
+      // from the same place again has to reach the next ball over — take the nearest one to
+      // any touch on the lower court rather than demanding a hit on the ball itself
+      if (p.y < FLOOR_Y - 110) return null;
       let idx = -1, best = 1e9;
       for (let i=0;i<S.fireBalls.length;i++){
-        const d = Math.hypot(p.x - S.fireBalls[i].x, p.y - S.fireBalls[i].y);
+        const d = Math.abs(p.x - S.fireBalls[i].x) + Math.abs(p.y - S.fireBalls[i].y)*0.25;
         if (d < best){ best = d; idx = i; }
       }
-      if (idx >= 0 && best <= 74) return { x:S.fireBalls[idx].x, y:S.fireBalls[idx].y, idx };
+      if (idx >= 0) return { x:S.fireBalls[idx].x, y:S.fireBalls[idx].y, idx };
       return null;
     }
     if (Math.hypot(p.x - HOME.x, p.y - HOME.y) <= 84) return { x:HOME.x, y:HOME.y, idx:-1 };
@@ -805,6 +814,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     const grab = grabAt(p);
     if (!grab) return;
     shotOrigin.x = grab.x; shotOrigin.y = grab.y; shotOrigin.idx = grab.idx;
+    S.dragFrom = grab.idx >= 0 ? { x:p.x, y:p.y } : null;
     S.dragging = true;
     S.dragTo = p;
     powerWrap.classList.add('active');
@@ -813,7 +823,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   function onMove(e){
     if (!S.dragging) return;
     S.dragTo = courtPoint(e);
-    if (S.dragTo.y < shotOrigin.y - 20){
+    if (S.dragTo.y < dragStart().y - 20){
       const t = aimTarget(S.dragTo);
       const pct = shotPower(solveShot(t.x, t.y));
       powerFill.style.width = pct + '%'; powerText.textContent = pct + '%';
@@ -825,14 +835,17 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     powerWrap.classList.remove('active');
     const to = S.dragTo; S.dragTo = null;
     powerFill.style.width = '0%'; powerText.textContent = '0%';
-    if (!to) return;
-    if (Math.hypot(to.x - shotOrigin.x, to.y - shotOrigin.y) < 18) return;   // a tap is not a shot
-    if (to.y > shotOrigin.y - 20){                                // it has to point up the court
+    const f = dragStart();
+    if (!to){ S.dragFrom = null; return; }
+    if (Math.hypot(to.x - f.x, to.y - f.y) < 18){ S.dragFrom = null; return; }   // a tap is not a shot
+    if (to.y > f.y - 20){                                         // it has to point up the court
+      S.dragFrom = null;
       showMessage('למשוך לכיוון הסל ☝️','var(--muted)');
       setTimeout(()=>message.classList.remove('show'), 700);
       return;
     }
     const t = aimTarget(to);
+    S.dragFrom = null;
     launchAt(t.x, t.y);
   }
   cv.addEventListener('pointerdown', onDown);
@@ -1217,8 +1230,16 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   // point being aimed at — nothing is hidden from the player
   function drawAim(){
     if (!S.dragging || !S.dragTo) return;
-    if (Math.hypot(S.dragTo.x - shotOrigin.x, S.dragTo.y - shotOrigin.y) < 14) return;
-    if (S.dragTo.y > shotOrigin.y - 20) return;
+    const f0 = dragStart();
+    if (shotOrigin.idx >= 0){
+      // ring the flaming ball you picked up, since your finger may not be on it
+      g.save();
+      g.strokeStyle = '#ffd23f'; g.lineWidth = 3; g.globalAlpha = 0.9;
+      g.beginPath(); g.arc(shotOrigin.x, shotOrigin.y, FB_R + 7 + Math.sin(S.tAnim*12)*2, 0, Math.PI*2); g.stroke();
+      g.restore();
+    }
+    if (Math.hypot(S.dragTo.x - f0.x, S.dragTo.y - f0.y) < 14) return;
+    if (S.dragTo.y > f0.y - 20) return;
     const t = aimTarget(S.dragTo);
     const sol = solveShot(t.x, t.y);
     const col = inFire() ? '#ffd23f' : '#b6ff2e';
