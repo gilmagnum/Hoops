@@ -270,8 +270,8 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   const FIRE_SHOTS   = 3;          // fire mode lasts a number of shots, not a stretch of seconds
   // a longer streak rains flaming balls onto the floor: each one you pick up doubles again, so a
   // shot taken while both are running is worth four times
-  const FIREBALL_AT    = 5;
-  const FIREBALL_SETS  = [5, 3];   // two chances a game: five balls the first time, three the second
+  const FIREBALL_AT    = 5;        // every streak of five opens a fresh chance at the badge
+  const FIREBALL_SETS  = [5, 3];   // sink it on the first look for five balls; the retry is worth three
   const FB_R           = 13;
   const FB_GRAV        = 1700;
   // the clock bonus hangs in the net: you win it by sinking the shot, so it never costs a turn
@@ -364,7 +364,9 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   const fireMult  = () => (S.fireShots > 0 ? 2 : 1) * (S.fireBalls.length > 0 ? 2 : 1);
   const multWord  = m => m >= 4 ? ' פי ארבע 🔥🔥' : (m === 2 ? ' כפול 🔥' : '');
   const tokenBonus = () => (S.netToken && S.netToken.shots >= TOKEN_SHOTS) ? TIME_BONUS_1 : TIME_BONUS_2;
-  const nextFireBalls = () => FIREBALL_SETS[Math.min(S.fireAwards, FIREBALL_SETS.length - 1)];
+  // like the clock, the fire badge is worth more on the first attempt than on the second
+  const nextFireBalls = () => (S.netToken && S.netToken.kind === 'fire' && S.netToken.shots >= TOKEN_SHOTS)
+                              ? FIREBALL_SETS[0] : FIREBALL_SETS[1];
   const COUNT_WORD = { 3:'שלושה', 4:'ארבעה', 5:'חמישה' };
   const SWISH_CALLS = ['סוויש! 🎯', 'רק רשת! 🥅', 'נטו! ✨'];
   const NEAR_CALLS  = ['כמעט! 😤', 'קרוב מאוד', 'על השפה 😬', 'כמעט נכנס'];
@@ -755,8 +757,9 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
 
   // only ONE bonus ever hangs in the net. a second one that comes due waits its turn instead of
   // sharing the rim, and the fire bonus jumps the queue because it is the rarer of the two.
-  const capLeft = kind => kind === 'fire' ? S.fireAwards < FIREBALL_SETS.length
-                                          : S.timeAwards < TIME_AWARDS_MAX;
+  // the fire badge has no per-game quota — it is earned again by every streak of five — while the
+  // clock stays rationed, so the round can only be stretched so far
+  const capLeft = kind => kind === 'fire' ? true : S.timeAwards < TIME_AWARDS_MAX;
   function requestToken(kind){
     if (!capLeft(kind)) return false;
     if (S.netToken){
@@ -1169,21 +1172,32 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     g.fillStyle = glow;
     g.beginPath(); g.arc(x, y, 44, 0, Math.PI*2); g.fill();
 
+    if (fire) tokenFlames(x, y, r*pulse);
     g.translate(x, y); g.scale(pulse, pulse);
 
     if (fire){
-      g.fillStyle = last ? '#ff7a1f' : '#ffaa28';
+      const face = g.createRadialGradient(-6, -8, 2, 0, 0, r);
+      face.addColorStop(0,    last ? '#ffd07a' : '#ffe49a');
+      face.addColorStop(0.55, last ? '#ff8c20' : '#ffaa28');
+      face.addColorStop(1,    last ? '#dd3a00' : '#ff6a00');
+      g.fillStyle = face;
       g.strokeStyle = '#3a1000'; g.lineWidth = 3;
       g.beginPath(); g.arc(0, 0, r, 0, Math.PI*2); g.fill(); g.stroke();
-      g.strokeStyle = '#3a1000'; g.lineWidth = 1.8;
-      g.beginPath(); g.arc(0, -4, 7.5, 0, Math.PI*2); g.stroke();
-      g.beginPath(); g.moveTo(-7.5,-4); g.lineTo(7.5,-4); g.stroke();
-      g.beginPath(); g.ellipse(0,-4,3.6,7.5,0,0,Math.PI*2); g.stroke();
-      g.fillStyle = '#3a1000';
-      g.font = "700 12px 'Secular One', Rubik, sans-serif";
+      // a faint basketball behind the digit, so the badge still reads as "balls"
+      g.globalAlpha = 0.20;
+      g.strokeStyle = '#3a1000'; g.lineWidth = 1.6;
+      g.beginPath(); g.arc(0, 0, r-6, 0, Math.PI*2); g.stroke();
+      g.beginPath(); g.moveTo(-(r-6), 0); g.lineTo(r-6, 0); g.stroke();
+      g.beginPath(); g.ellipse(0, 0, (r-6)*0.42, r-6, 0, 0, Math.PI*2); g.stroke();
+      g.globalAlpha = 1;
+      // the count itself, big and centred
+      g.font = "700 22px 'Secular One', Rubik, sans-serif";
       g.textAlign = 'center'; g.textBaseline = 'middle';
       if ('direction' in g) g.direction = 'ltr';
-      g.fillText('×' + nextFireBalls(), 0, r - 7);
+      g.lineWidth = 3.4; g.strokeStyle = 'rgba(58,16,0,0.85)'; g.lineJoin = 'round';
+      g.strokeText(String(nextFireBalls()), 0, 1);
+      g.fillStyle = '#fff6e0';
+      g.fillText(String(nextFireBalls()), 0, 1);
     } else {
       g.fillStyle = last ? '#ffb428' : '#22e0ff';
       g.strokeStyle = '#06222e'; g.lineWidth = 3;
@@ -1296,6 +1310,53 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
       }
     }
     g.setLineDash([]);
+    g.restore();
+  }
+
+  // a full ring of flame licking around the fire badge, turning slowly so it never looks frozen
+  function tokenFlames(x, y, r){
+    const t = S.tAnim;
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    const halo = g.createRadialGradient(x, y, r*0.4, x, y, r*2.3);
+    halo.addColorStop(0,'rgba(255,150,20,0.32)');
+    halo.addColorStop(1,'rgba(255,60,0,0)');
+    g.fillStyle = halo;
+    g.beginPath(); g.arc(x, y, r*2.3, 0, Math.PI*2); g.fill();
+    // tongues stand on the rim of the badge but all lean upward, so the ring reads as a fire
+    // crown rather than a sunburst; two passes give it depth
+    for (let layer=0; layer<2; layer++){
+      const N    = layer ? 9 : 13;
+      const spin = layer ? -0.30 : 0.42;
+      const rb   = r*(layer ? 0.74 : 0.86);
+      for (let i=0;i<N;i++){
+        const a  = (i/N)*Math.PI*2 + t*spin + (layer ? 0.35 : 0);
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const ph = t*(4.4 + (i%5)*0.8) + i*2.3 + layer*1.1;
+        // uneven lengths on their own beats — an even ring is what makes a star shape
+        const h  = r*(layer ? 0.46 : 0.70 + (i%3)*0.32) * (0.82 + Math.sin(ph)*0.34);
+        const w  = r*(layer ? 0.13 : 0.16);
+        // every tongue leans toward the sky, the way a real flame does
+        let dx = ca, dy = sa - 1.25;
+        const dl = Math.hypot(dx, dy); dx /= dl; dy /= dl;
+        const sway = Math.sin(ph*0.85 + i)*h*0.30;
+        const bx = x + ca*rb, by = y + sa*rb;
+        const tx = bx + dx*h - dy*sway, ty = by + dy*h + dx*sway;
+        const nx = -sa*w, ny = ca*w;                     // across the base, not along it
+        const grd = g.createLinearGradient(bx, by, tx, ty);
+        grd.addColorStop(0,   'rgba(255,40,0,0.12)');
+        grd.addColorStop(0.26,'rgba(255,120,10,0.74)');
+        grd.addColorStop(0.62,'rgba(255,190,50,0.60)');
+        grd.addColorStop(0.88,'rgba(255,240,170,0.26)');
+        grd.addColorStop(1,   'rgba(255,255,230,0)');
+        g.fillStyle = grd;
+        g.beginPath();
+        g.moveTo(bx - nx, by - ny);
+        g.quadraticCurveTo(bx - nx*1.15 + dx*h*0.50, by - ny*1.15 + dy*h*0.50, tx, ty);
+        g.quadraticCurveTo(bx + nx*1.15 + dx*h*0.50, by + ny*1.15 + dy*h*0.50, bx + nx, by + ny);
+        g.closePath(); g.fill();
+      }
+    }
     g.restore();
   }
 
