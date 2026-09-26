@@ -341,8 +341,10 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     balls:[], dragging:false, dragTo:null, dragFrom:null,
     fireShots:0, fireFresh:false, fireBalls:[], fbPops:[], timeAwards:0, fireAwards:0,
     netToken:null, pending:[], pops:[],
-    // the round's own tally, shown on the game-over card before the leaderboard slides over it
-    shots:0, made2:0, made3:0, wonSecs:0, wonBalls:0, fireModes:0,
+    // the round's own tally, shown on the game-over card before the leaderboard slides over it.
+    // roundBest is THIS round's longest run of makes; bestStreak is the all-time record kept in
+    // localStorage, which must never be what the card reports
+    roundBest:0, shots:0, made2:0, made3:0, wonSecs:0, wonBalls:0, fireModes:0,
     netRipple:0, rimFlash:0, boardFlash:0, timerHandle:null
   };
 
@@ -561,7 +563,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
       hoopX:W/2, hoopDir:1, hopIn:0, acc:0, balls:[], dragging:false, dragTo:null, dragFrom:null,
       fireShots:0, fireFresh:false, fireBalls:[], fbPops:[], timeAwards:0, fireAwards:0,
       netToken:null, pending:[], pops:[],
-      shots:0, made2:0, made3:0, wonSecs:0, wonBalls:0, fireModes:0,
+      roundBest:0, shots:0, made2:0, made3:0, wonSecs:0, wonBalls:0, fireModes:0,
       netRipple:0, rimFlash:0, boardFlash:0
     });
     spotIdx = 2; HOME.x = SPOTS[2]; nextSpot();
@@ -597,15 +599,20 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     if (S.timerHandle) clearInterval(S.timerHandle);
     S.netToken = null; S.pending = []; S.balls = [];
     finalScoreEl.textContent = S.score;
-    finalStreakEl.textContent = S.bestStreak;
+    finalStreakEl.textContent = S.roundBest;   // this round's longest run, not the all-time one
+    // a round that ends mid-streak never passes through missedShot, so persist the record here
+    if (S.bestStreak > storedBest){
+      try{ localStorage.setItem('hoops_beststreak', S.bestStreak); }catch(e){}
+      storedBest = S.bestStreak;
+    }
     renderTally();
     overModal.classList.add('show');
     sfx.buzzer(); vibrate([20,40,20,40,60]);
     // long enough to actually read the tally before the leaderboard panel covers the card
     if (window.Leaderboard){
       (Leaderboard.gameOverIn
-        ? Leaderboard.gameOverIn(SUMMARY_MS, S.score, { streak:S.bestStreak })
-        : setTimeout(function(){ Leaderboard.gameOver(S.score, { streak:S.bestStreak }); }, SUMMARY_MS));
+        ? Leaderboard.gameOverIn(SUMMARY_MS, S.score, { streak:S.roundBest })
+        : setTimeout(function(){ Leaderboard.gameOver(S.score, { streak:S.roundBest }); }, SUMMARY_MS));
     }
   }
 
@@ -764,7 +771,8 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
   function scoreBasket(swish, mult){
     S.makes++;
     S.streak++;
-    if (S.streak > S.bestStreak) S.bestStreak = S.streak;
+    if (S.streak > S.roundBest)  S.roundBest  = S.streak;   // this round
+    if (S.streak > S.bestStreak) S.bestStreak = S.streak;   // all time
     const pts = (swish ? 3 : 2) * mult;
     S.score += pts;
     swish ? S.made3++ : S.made2++;       // counted by the basket's base worth, before multipliers
