@@ -345,7 +345,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     // roundBest is THIS round's longest run of makes; bestStreak is the all-time record kept in
     // localStorage, which must never be what the card reports
     roundBest:0, shots:0, made2:0, made3:0, wonSecs:0, wonBalls:0, fireModes:0,
-    netRipple:0, rimFlash:0, boardFlash:0, timerHandle:null
+    netRipple:0, rimFlash:0, boardFlash:0, timerHandle:null, againTimer:null
   };
 
   const cv = document.getElementById('cv');
@@ -557,6 +557,7 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     setPaused(false);
     if (window.Arcade) Arcade.setPaused(false);
     if (S.timerHandle) clearInterval(S.timerHandle);
+    if (S.againTimer){ clearTimeout(S.againTimer); S.againTimer = null; }
     Object.assign(S,{
       score:0, timeLeft:ROUND_SECONDS, streak:0, makes:0,
       over:false, started:false, locked:true, timeUp:false,
@@ -608,11 +609,25 @@ html[data-arcade-theme="light"] .modal-card{ background:linear-gradient(180deg,#
     renderTally();
     overModal.classList.add('show');
     sfx.buzzer(); vibrate([20,40,20,40,60]);
+
+    // "another round" restarts the game, and restarting drops a score that has not been saved
+    // yet. so while the tally is up and the leaderboard has not opened, the button is not there
+    // to be hit by mistake; it comes back once the panel has taken over and the score is safely
+    // on offer. with no leaderboard at all (offline, or the standalone build) the button has to
+    // stay, or there is no way out of the card.
+    if (S.againTimer){ clearTimeout(S.againTimer); S.againTimer = null; }
     // long enough to actually read the tally before the leaderboard panel covers the card
     if (window.Leaderboard){
+      playAgainBtn.classList.add('hidden');
       (Leaderboard.gameOverIn
         ? Leaderboard.gameOverIn(SUMMARY_MS, S.score, { streak:S.roundBest })
         : setTimeout(function(){ Leaderboard.gameOver(S.score, { streak:S.roundBest }); }, SUMMARY_MS));
+      S.againTimer = setTimeout(function(){
+        S.againTimer = null;
+        playAgainBtn.classList.remove('hidden');
+      }, SUMMARY_MS + 500);
+    } else {
+      playAgainBtn.classList.remove('hidden');
     }
   }
 
